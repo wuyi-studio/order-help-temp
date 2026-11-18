@@ -745,8 +745,11 @@ const Extractor = {
 
     if (phoneIdx !== -1) {
       const trailingLines = lines.slice(phoneIdx + 1).map(l => l.trim()).filter(Boolean);
-      if (trailingLines.length > 0) {
-        // 只要電話行之後有內容，且包含算式、金額、收費等，則電話之後皆歸入金額明細
+      const hasOrderBodyAfterPhone = trailingLines.some(l =>
+        /(?:取貨日期|自取日期|取貨時間|自取時間|取貨地址|自取地點|花材色系|鮮花色系|蛋糕尺寸|蛋糕口味|💐|🎂)/.test(l)
+      );
+      if (trailingLines.length > 0 && !hasOrderBodyAfterPhone) {
+        // 只要電話行之後有內容，且包含算式、金額、收費等（非訂單主體），則電話之後皆歸入金額明細
         const hasPricingIndicator = trailingLines.some(l => 
           /[\$＝=＋\+xX\*]|收\s*\d+|\d+\s*[\$元]|\d+\s*[\*xX]\s*\d+|餐具|蠟燭|保冰|保冷|漢堡盒|蛋糕|花束/i.test(l)
         );
@@ -907,7 +910,7 @@ const Extractor = {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const trimmed = line.trim();
+      const trimmed = line.trim().replace(/^[•·‧↳]\s*/, '');
 
       // Section switches (e.g. 1️⃣ or 2️⃣ or 花束/蛋糕 headers)
       if (/^1️⃣/.test(trimmed) || (/花束|透包/.test(trimmed) && orderType === 'combined')) {
@@ -1023,8 +1026,8 @@ const Extractor = {
         state.pickup.time = val;
         continue;
       }
-      if (/^(自取地點|取貨地點|地點|自取門市)[：:]/i.test(trimmed)) {
-        let val = trimmed.replace(/^(自取地點|取貨地點|地點|自取門市)[：:]\s*/i, '').trim();
+      if (/^(自取地點|取貨地點|取貨地址|地點|自取門市)[：:]/i.test(trimmed)) {
+        let val = trimmed.replace(/^(自取地點|取貨地點|取貨地址|地點|自取門市)[：:]\s*/i, '').trim();
         if (!val && i + 1 < lines.length && !isSectionHeader(lines[i + 1])) {
           val = lines[++i].trim();
         }
@@ -1041,8 +1044,8 @@ const Extractor = {
         state.customer.lineName = val;
         continue;
       }
-      if (/^(訂購人姓名|訂購人|姓名)[：:]/i.test(trimmed)) {
-        let val = trimmed.replace(/^(訂購人姓名|訂購人|姓名)[：:]\s*/i, '').trim();
+      if (/^(訂購人姓名|訂購姓名|訂購人|姓名)[：:]/i.test(trimmed)) {
+        let val = trimmed.replace(/^(訂購人姓名|訂購姓名|訂購人|姓名)[：:]\s*/i, '').trim();
         if (!val && i + 1 < lines.length && !isSectionHeader(lines[i + 1])) {
           val = lines[++i].trim();
         }
@@ -1083,7 +1086,7 @@ const Extractor = {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const trimmed = line.trim();
+      const trimmed = line.trim().replace(/^[•·‧↳]\s*/, '');
 
       // 起始判定：支援 蛋糕$790、漢堡盒$760、花束$880、鮮花預算：500、或直接寫 總共$895、＝1400、純數字等
       if (!capturing) {
@@ -2829,12 +2832,25 @@ if (typeof module !== 'undefined' && module.exports) {
         window.CardRenderer.downloadCard(currentCanvas, filename);
       });
 
-      async function postToGas(url, payload) {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload)
-        });
+      async function postToGas(url, payload, timeoutMs = 30000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        let res;
+        try {
+          res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+          });
+        } catch (err) {
+          if (err && err.name === 'AbortError') {
+            throw new Error('連線逾時（超過 30 秒未回應），請點「🔁 重送」');
+          }
+          throw err;
+        } finally {
+          clearTimeout(timer);
+        }
         const text = await res.text();
         try {
           return JSON.parse(text);
