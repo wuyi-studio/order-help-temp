@@ -230,6 +230,35 @@
       margin-bottom: 12px;
     }
 
+    .pickup-date-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .pickup-date-row input[type="text"] {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .btn-reschedule {
+      flex-shrink: 0;
+      padding: 9px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+      border-color: #cbd5e1;
+      background: #f8fafc;
+      color: #475569;
+    }
+
+    .btn-reschedule.active {
+      background: #fef3c7;
+      border-color: #f59e0b;
+      color: #b45309;
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15);
+    }
+    }
+
     .field label {
       display: block;
       font-size: 11.5px;
@@ -432,7 +461,10 @@
           </div>
           <div class="field">
             <label>取貨日期</label>
-            <input type="text" id="fieldPickupDate" placeholder="2026/11/08">
+            <div class="pickup-date-row">
+              <input type="text" id="fieldPickupDate" placeholder="2026/11/08">
+              <button type="button" class="btn btn-reschedule" id="btnReschedule" title="備註：這位客人已改過期">🔄 改期</button>
+            </div>
           </div>
           <div class="field">
             <label>取貨時間</label>
@@ -1339,6 +1371,13 @@ const CardRenderer = {
           continue;
         }
 
+        // 改期備註高亮
+        if (/^備[註注][：:]\s*這位客人已改過期/.test(trimmed)) {
+          plan.push({ type: 'highlight_reschedule', text: trimmed, height: lineHeight + 12 });
+          totalH += lineHeight + 12;
+          continue;
+        }
+
         plan.push({ type: 'text', text: line, height: lineHeight });
         totalH += lineHeight;
       }
@@ -1457,6 +1496,20 @@ const CardRenderer = {
         this._drawRoundRect(ctx, paddingX - 4, curY + 1, bgW, bgH, 4, '#fae8ff');
 
         ctx.fillStyle = '#9333ea';
+        ctx.fillText(item.text, paddingX + 4, curY + 15);
+        curY += item.height;
+        continue;
+      }
+
+      // 改期備註高亮 (琥珀色螢光底框)
+      if (item.type === 'highlight_reschedule') {
+        ctx.font = fontBold;
+        const metrics = ctx.measureText(item.text);
+        const bgW = Math.min(contentW, metrics.width + 16);
+        const bgH = 28;
+        this._drawRoundRect(ctx, paddingX - 4, curY + 1, bgW, bgH, 4, '#fef3c7');
+
+        ctx.fillStyle = '#b45309';
         ctx.fillText(item.text, paddingX + 4, curY + 15);
         curY += item.height;
         continue;
@@ -1937,6 +1990,8 @@ if (typeof module !== 'undefined' && module.exports) {
       const rawNoteInput = document.getElementById('rawNoteInput');
       const fieldDateTag = document.getElementById('fieldDateTag');
       const fieldPickupDate = document.getElementById('fieldPickupDate');
+      const btnReschedule = document.getElementById('btnReschedule');
+      const RESCHEDULE_NOTE = '備註：這位客人已改過期';
       const fieldPickupTime = document.getElementById('fieldPickupTime');
       const fieldLocation = document.getElementById('fieldLocation');
       const fieldLineName = document.getElementById('fieldLineName');
@@ -2087,15 +2142,58 @@ if (typeof module !== 'undefined' && module.exports) {
         rawNoteInput.innerText = txt || '';
       }
 
-      function addImageDataUrl(src) {
+      function convertDataUrlToPngIfNeeded(dataUrl) {
+        if (!dataUrl || !dataUrl.startsWith('data:image/tiff')) {
+          return Promise.resolve(dataUrl);
+        }
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const c = document.createElement('canvas');
+              c.width = img.naturalWidth || img.width;
+              c.height = img.naturalHeight || img.height;
+              const ctx = c.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+              resolve(c.toDataURL('image/png'));
+            } catch (_) {
+              resolve(dataUrl);
+            }
+          };
+          img.onerror = () => resolve(dataUrl);
+          img.src = dataUrl;
+        });
+      }
+
+      async function normalizeImageSrc(src) {
+        if (!src) return null;
+        if (src.startsWith('blob:')) {
+          try {
+            const res = await fetch(src);
+            const blob = await res.blob();
+            const dataUrl = await readBlobAsDataUrl(blob);
+            return await convertDataUrlToPngIfNeeded(dataUrl);
+          } catch (_) {
+            return src;
+          }
+        }
+        if (src.startsWith('data:image/tiff')) {
+          return await convertDataUrlToPngIfNeeded(src);
+        }
+        return src;
+      }
+
+      async function addImageDataUrl(src) {
         if (!src) return;
         const isAllowed = src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:');
         if (!isAllowed) return;
-        if (uploadedImages.some(x => x.dataUrl === src)) return;
+        const normalized = await normalizeImageSrc(src);
+        if (!normalized) return;
+        if (uploadedImages.some(x => x.dataUrl === normalized)) return;
         const defaultCat = (fieldFlowerText.value.trim() && !fieldCakeText.value.trim()) ? 'flower' : 'cake';
         uploadedImages.push({
           id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          dataUrl: src,
+          dataUrl: normalized,
           category: defaultCat
         });
         renderImagesList();
@@ -2166,6 +2264,7 @@ if (typeof module !== 'undefined' && module.exports) {
         fieldFlowerText.value = flowerTxt;
         fieldPricingText.value = extractPricingFromText(text);
 
+        syncRescheduleButton();
         refreshCardPreview();
       }
 
@@ -2260,7 +2359,7 @@ if (typeof module !== 'undefined' && module.exports) {
         const valid = [];
         const blocked = [];
         for (const img of Array.from(doc.querySelectorAll('img'))) {
-          const src = img.getAttribute('src') || '';
+          const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
           if (!src) continue;
           if (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')) {
             valid.push(src);
@@ -2271,14 +2370,73 @@ if (typeof module !== 'undefined' && module.exports) {
         return { valid, blocked };
       }
 
-      function scanNoteDomForImages() {
+      function extractImagesFromRtf(rtf) {
+        if (!rtf || typeof rtf !== 'string' || !rtf.includes('\\pict')) return [];
+        const blobs = [];
+        let searchFrom = 0;
+        while (true) {
+          const idx = rtf.indexOf('{\\pict', searchFrom);
+          if (idx === -1) break;
+          let depth = 0;
+          let end = idx;
+          for (; end < rtf.length; end++) {
+            const ch = rtf[end];
+            if (ch === '{') depth++;
+            else if (ch === '}') {
+              depth--;
+              if (depth === 0) {
+                end++;
+                break;
+              }
+            }
+          }
+          const block = rtf.slice(idx, end);
+          searchFrom = end;
+
+          let mime = '';
+          if (/\\pngblip\b/.test(block)) mime = 'image/png';
+          else if (/\\jpegblip\b/.test(block)) mime = 'image/jpeg';
+
+          // 移除巢狀群組 (如 {\*\picprop ...}) 與 RTF 控制字元，保留十六進位資料
+          let stripped = '';
+          let subDepth = 0;
+          for (let i = 1; i < block.length - 1; i++) {
+            const c = block[i];
+            if (c === '{') { subDepth++; continue; }
+            if (c === '}') { if (subDepth > 0) subDepth--; continue; }
+            if (subDepth === 0) stripped += c;
+          }
+          stripped = stripped.replace(/\\[a-zA-Z]+-?\d*\s?/g, '');
+          const hex = stripped.replace(/[^0-9a-fA-F]/g, '');
+          if (hex.length < 32) continue;
+
+          if (!mime) {
+            const head = hex.slice(0, 8).toLowerCase();
+            if (head.startsWith('89504e47')) mime = 'image/png';
+            else if (head.startsWith('ffd8ff')) mime = 'image/jpeg';
+            else if (head.startsWith('47494638')) mime = 'image/gif';
+            else if (head.startsWith('52494646')) mime = 'image/webp';
+            else continue;
+          }
+
+          const byteLen = Math.floor(hex.length / 2);
+          const bytes = new Uint8Array(byteLen);
+          for (let i = 0; i < byteLen; i++) {
+            bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+          }
+          blobs.push(new Blob([bytes], { type: mime }));
+        }
+        return blobs;
+      }
+
+      async function scanNoteDomForImages() {
         const domImgs = Array.from(rawNoteInput.querySelectorAll('img'));
         const blocked = [];
         for (const imgEl of domImgs) {
-          const src = imgEl.getAttribute('src') || '';
+          const src = imgEl.getAttribute('src') || imgEl.currentSrc || '';
           if (!src) continue;
           if (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')) {
-            addImageDataUrl(src);
+            await addImageDataUrl(src);
           } else {
             blocked.push(src);
           }
@@ -2293,14 +2451,17 @@ if (typeof module !== 'undefined' && module.exports) {
         // 1. 必須在任何 await 之前同步讀取所有剪貼簿資料，否則瀏覽器會清空 clipboardData！
         const plain = cd.getData('text/plain') || '';
         const html = cd.getData('text/html') || '';
+        const rtf = cd.getData('text/rtf') || '';
+        const clipTypes = Array.from(cd.types || []);
         const { valid: htmlImgSrcs, blocked: htmlBlockedSrcs } = extractImagesFromHtml(html);
+        const rtfImageBlobs = extractImagesFromRtf(rtf);
 
         const imageBlobs = [];
         if (cd.items) {
           for (const item of Array.from(cd.items)) {
             if (item.kind === 'file' || (item.type && item.type.startsWith('image/'))) {
               const f = item.getAsFile();
-              if (f && (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name || ''))) {
+              if (f && (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|tiff?|heic)$/i.test(f.name || ''))) {
                 imageBlobs.push(f);
               }
             }
@@ -2308,7 +2469,7 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         if (imageBlobs.length === 0 && cd.files && cd.files.length > 0) {
           for (const f of Array.from(cd.files)) {
-            if (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name || '')) {
+            if (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|tiff?|heic)$/i.test(f.name || '')) {
               imageBlobs.push(f);
             }
           }
@@ -2317,39 +2478,49 @@ if (typeof module !== 'undefined' && module.exports) {
         const isInsideNoteBox = (e.target === rawNoteInput || rawNoteInput.contains(e.target));
         const isOtherInput = !isInsideNoteBox && (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
 
-        // 保持原本格式且不帶粗體/多餘 HTML 樣式：若有純文字就直接以純文字貼入 rawNoteInput
-        if (!isOtherInput && plain.trim()) {
+        // 若游標不在記事本框內，直接以純文字貼入 rawNoteInput；
+        // 若游標在 rawNoteInput 內，不清除選取範圍也不阻擋原生貼上（讓 Safari / Chrome 把 Pages / 備忘錄圖片轉成 DOM <img>），
+        // 待掃描完圖片後再把 rawNoteInput 整理為乾淨純文字。
+        if (!isInsideNoteBox && !isOtherInput && plain.trim()) {
           e.preventDefault();
           const cleanPlain = plain.replace(/\uFFFC/g, '').replace(/\r\n/g, '\n');
           setNotePlainText(cleanPlain);
           rawNoteInput.focus();
         }
 
-        // 2. 處理圖片 blobs
-        for (const blob of imageBlobs) {
+        // 2. 處理圖片 blobs（含剪貼簿圖片檔案與 RTF 內嵌圖片）
+        for (const blob of [...imageBlobs, ...rtfImageBlobs]) {
           const dataUrl = await readBlobAsDataUrl(blob);
-          addImageDataUrl(dataUrl);
+          await addImageDataUrl(dataUrl);
         }
 
-        // 3. 處理 HTML 內含圖片（例如 LINE 記事本複製出的 <img src="https://...">）
-        if (imageBlobs.length === 0 && htmlImgSrcs.length > 0) {
+        // 3. 處理 HTML 內含圖片（例如 LINE 記事本 / Pages 複製出的 <img>）
+        if (htmlImgSrcs.length > 0 && (imageBlobs.length === 0 || htmlImgSrcs.length > imageBlobs.length)) {
           for (const src of htmlImgSrcs) {
-            addImageDataUrl(src);
+            await addImageDataUrl(src);
           }
         }
 
-        // 4. 等待 contenteditable 原生貼上完成後，再掃描 DOM 內的圖片並解析文字
-        setTimeout(() => {
-          const domBlocked = scanNoteDomForImages();
+        // 4. 等待 contenteditable 原生貼上完成後，再掃描 DOM 內的圖片、整理純文字並解析
+        setTimeout(async () => {
+          const domBlocked = await scanNoteDomForImages();
+          if (isInsideNoteBox) {
+            const cleanText = (plain || getNotePlainText()).replace(/\uFFFC/g, '').replace(/\r\n/g, '\n').trim();
+            if (cleanText) {
+              setNotePlainText(cleanText);
+            } else {
+              rawNoteInput.innerHTML = '';
+            }
+          }
           parseNoteContent();
           const txtLen = getNotePlainText().length;
           const totalBlocked = htmlBlockedSrcs.length + domBlocked.length;
           if (totalBlocked > 0 && uploadedImages.length === 0) {
-            showStatus('warn', `📋 已貼上文字（${txtLen} 字），但偵測到 Mac 備忘錄本機圖片路徑（瀏覽器安全限制無法直接讀取）。<br>👉 請直接把圖片<strong>拖曳</strong>到「🖼️ 附帶圖片」框，或對圖片按右鍵「<strong>拷貝影像</strong>」再貼上！`);
+            showStatus('warn', `📋 已貼上文字（${txtLen} 字），但瀏覽器安全性阻擋了本機圖片路徑（剪貼簿格式：${clipTypes.join(', ')}）。<br>👉 請在 Pages 裡單獨點圖片按 <strong>Cmd+C</strong> 再貼上，或直接把圖片<strong>拖曳</strong>到「🖼️ 附帶圖片」框！`);
           } else if (txtLen > 0 || uploadedImages.length > 0) {
             showStatus('info', `📋 已貼上記事本內容！（文字 ${txtLen} 字、圖片 ${uploadedImages.length} 張）`);
           }
-        }, 60);
+        }, 120);
       }
 
       document.addEventListener('paste', handlePasteEvent);
@@ -2382,13 +2553,13 @@ if (typeof module !== 'undefined' && module.exports) {
                   const htmlTxt = await blob.text();
                   const { valid: srcs } = extractImagesFromHtml(htmlTxt);
                   for (const src of srcs) {
-                    addImageDataUrl(src);
+                    await addImageDataUrl(src);
                     gotAny = true;
                   }
                 } else if (type.startsWith('image/')) {
                   const blob = await clipItem.getType(type);
                   const dataUrl = await readBlobAsDataUrl(blob);
-                  addImageDataUrl(dataUrl);
+                  await addImageDataUrl(dataUrl);
                   gotAny = true;
                 }
               }
@@ -2458,6 +2629,34 @@ if (typeof module !== 'undefined' && module.exports) {
         showStatus('success', '✅ Apps Script 網址已儲存！');
       });
 
+      function hasRescheduleNote() {
+        return /這位客人已改過期/.test(fieldCakeText.value) || /這位客人已改過期/.test(fieldFlowerText.value);
+      }
+
+      function syncRescheduleButton() {
+        const active = hasRescheduleNote();
+        btnReschedule.classList.toggle('active', active);
+        btnReschedule.textContent = active ? '✓ 已改期' : '🔄 改期';
+      }
+
+      btnReschedule.addEventListener('click', () => {
+        const isActive = hasRescheduleNote();
+        if (isActive) {
+          const stripRe = /\n?^\s*備[註注][：:]\s*這位客人已改過期\s*$/gm;
+          fieldCakeText.value = fieldCakeText.value.replace(stripRe, '').trim();
+          fieldFlowerText.value = fieldFlowerText.value.replace(stripRe, '').trim();
+        } else {
+          const target = (fieldCakeText.value.trim() || !fieldFlowerText.value.trim()) ? fieldCakeText : fieldFlowerText;
+          target.value = target.value.trim() ? `${target.value.trim()}\n${RESCHEDULE_NOTE}` : RESCHEDULE_NOTE;
+        }
+        syncRescheduleButton();
+        refreshCardPreview();
+      });
+
+      [fieldCakeText, fieldFlowerText].forEach((el) => {
+        el.addEventListener('input', syncRescheduleButton);
+      });
+
       document.getElementById('btnClearAll').addEventListener('click', () => {
         rawNoteInput.innerHTML = '';
         fieldDateTag.value = '';
@@ -2472,6 +2671,7 @@ if (typeof module !== 'undefined' && module.exports) {
         fieldPricingText.value = '';
         uploadedImages = [];
         currentCanvas = null;
+        syncRescheduleButton();
         renderImagesList();
         previewBox.innerHTML = '<span class="hint">貼上記事本內容後，將自動在此產生取貨確認小卡預覽</span>';
         filenameBadge.textContent = '檔名：未指定日期 客戶.png';
@@ -2561,6 +2761,8 @@ if (typeof module !== 'undefined' && module.exports) {
           filename: filenameVal,
           reviewStatus: '⏳ 待複查',
           nikkiChecked: false,
+          isRescheduled: hasRescheduleNote(),
+          rescheduleNote: hasRescheduleNote() ? '這位客人已改過期' : '',
           rawText: getNotePlainText()
         };
 
