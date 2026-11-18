@@ -479,13 +479,21 @@
     <div class="batch-section" id="batchSection">
       <div class="panel">
         <div class="panel-title">
-          <span>📦 批次輸入多筆訂單（先預視所有小卡，再一次送出）</span>
+          <span>📦 批次輸入多筆訂單（支援匯入 .pages / .docx 圖片＋預視所有小卡）</span>
           <div style="display: flex; gap: 8px;">
+            <input type="file" id="batchPagesFile" accept=".pages,.docx" style="display: none;">
+            <button type="button" class="btn btn-soft" id="btnBatchImportPages">📄 匯入 Pages / Word 檔</button>
             <button type="button" class="btn btn-soft" id="btnBatchParse">⚡ 解析並預視全部</button>
             <button type="button" class="btn" id="btnBatchClear">🗑️ 清空批次</button>
           </div>
         </div>
-        <textarea id="batchRawInput" rows="8" placeholder="請一次貼上多筆訂單內容！&#10;&#10;💡 分隔方式：&#10;1. 每筆訂單之間用 --- 或 === 隔開，或留兩行以上空白&#10;2. 貼上後點「⚡ 解析並預視全部」，下方會列出每筆小卡預覽，可個別標記「🔄 改期」或載入單筆編輯！"></textarea>
+        <div id="batchImagesTray" class="images-section" style="display: none; margin-bottom: 12px;">
+          <div class="images-header">
+            <strong style="font-size: 13px; color: #881337;">🖼️ 從檔案擷取的圖片（點選圖片可依序附加到下方訂單）</strong>
+          </div>
+          <div class="images-list" id="batchImagesList"></div>
+        </div>
+        <textarea id="batchRawInput" rows="8" placeholder="請一次貼上多筆訂單內容（或匯入由 Pages 另存的 .docx 檔自動帶入文字＋圖片）！&#10;&#10;💡 分隔方式：&#10;1. 每筆訂單之間用 --- 或 === 隔開，或留兩行以上空白&#10;2. 若匯入 .pages 檔，會自動擷取檔案內的所有圖片；搭配貼上文字即可快速配對預覽！"></textarea>
         <div style="display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap;">
           <button type="button" class="btn btn-primary" id="btnBatchSendAll" style="width: auto; padding: 11px 20px;">
             🚀 全部送出至 Google Drive ＋ 試算表
@@ -2922,8 +2930,148 @@ if (typeof module !== 'undefined' && module.exports) {
       const btnBatchParse = document.getElementById('btnBatchParse');
       const btnBatchClear = document.getElementById('btnBatchClear');
       const btnBatchSendAll = document.getElementById('btnBatchSendAll');
+      const batchPagesFile = document.getElementById('batchPagesFile');
+      const btnBatchImportPages = document.getElementById('btnBatchImportPages');
+      const batchImagesTray = document.getElementById('batchImagesTray');
+      const batchImagesList = document.getElementById('batchImagesList');
 
-      let batchOrders = []; // [{ id, rawText, state, cakeText, flowerText, pricingText, dateTag, filename, canvas, isRescheduled }]
+      let batchOrders = []; // [{ id, rawText, state, cakeText, flowerText, pricingText, dateTag, filename, canvas, isRescheduled, images }]
+      let batchExtractedImages = []; // [{ id, name, dataUrl }]
+      let batchNextAttachIdx = 0;
+
+      async function parseZipEntries(arrayBuffer) {
+        const view = new DataView(arrayBuffer);
+        const bytes = new Uint8Array(arrayBuffer);
+        const decoder = new TextDecoder('utf-8');
+        let eocdOffset = -1;
+        for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+          if (view.getUint32(i, true) === 0x06054b50) {
+            eocdOffset = i;
+            break;
+          }
+        }
+        if (eocdOffset === -1) throw new Error('非有效的 ZIP / Pages / Docx 檔案格式');
+        const cdOffset = view.getUint32(eocdOffset + 16, true);
+        const totalEntries = view.getUint16(eocdOffset + 10, true);
+        const entries = [];
+        let ptr = cdOffset;
+        for (let i = 0; i < totalEntries; i++) {
+          if (view.getUint32(ptr, true) !== 0x02014b50) break;
+          const method = view.getUint16(ptr + 10, true);
+          const compSize = view.getUint32(ptr + 20, true);
+          const nameLen = view.getUint16(ptr + 28, true);
+          const extraLen = view.getUint16(ptr + 30, true);
+          const commentLen = view.getUint16(ptr + 32, true);
+          const localHeaderOffset = view.getUint32(ptr + 42, true);
+          const name = decoder.decode(bytes.slice(ptr + 46, ptr + 46 + nameLen));
+          ptr += 46 + nameLen + extraLen + commentLen;
+
+          const lhNameLen = view.getUint16(localHeaderOffset + 26, true);
+          const lhExtraLen = view.getUint16(localHeaderOffset + 28, true);
+          const dataStart = localHeaderOffset + 30 + lhNameLen + lhExtraLen;
+          const compData = bytes.slice(dataStart, dataStart + compSize);
+          entries.push({ name, method, compData });
+        }
+        return entries;
+      }
+
+      async function decompressZipEntry(entry) {
+        if (entry.method === 0) return entry.compData;
+        if (entry.method === 8 && typeof DecompressionStream !== 'undefined') {
+          const ds = new DecompressionStream('deflate-raw');
+          const writer = ds.writable.getWriter();
+          writer.write(entry.compData);
+          writer.close();
+          const resp = new Response(ds.readable);
+          return new Uint8Array(await resp.arrayBuffer());
+        }
+        return null;
+      }
+
+      function renderBatchExtractedTray() {
+        batchImagesList.innerHTML = '';
+        if (batchExtractedImages.length === 0) {
+          batchImagesTray.style.display = 'none';
+          return;
+        }
+        batchImagesTray.style.display = 'block';
+        batchExtractedImages.forEach((imgObj) => {
+          const chip = document.createElement('div');
+          chip.className = 'img-chip';
+          chip.style.cursor = 'pointer';
+          chip.title = '點選可附加到下方訂單';
+          const img = document.createElement('img');
+          img.src = imgObj.dataUrl;
+          const lbl = document.createElement('span');
+          lbl.style.fontSize = '11px';
+          lbl.style.color = '#475569';
+          lbl.textContent = '＋ 附加到訂單';
+          chip.appendChild(img);
+          chip.appendChild(lbl);
+          chip.onclick = async () => {
+            if (batchOrders.length === 0) {
+              showBatchStatus('warn', '⚠️ 請先貼上文字並點「⚡ 解析並預視全部」，再點圖片附加到訂單！');
+              return;
+            }
+            const target = batchOrders[batchNextAttachIdx % batchOrders.length];
+            target.images = target.images || [];
+            if (!target.images.includes(imgObj.dataUrl)) {
+              target.images.push(imgObj.dataUrl);
+            }
+            batchNextAttachIdx++;
+            await renderBatchCardItem(target);
+            renderBatchPreviewGrid();
+          };
+          batchImagesList.appendChild(chip);
+        });
+      }
+
+      btnBatchImportPages.addEventListener('click', () => batchPagesFile.click());
+      batchPagesFile.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        batchPagesFile.value = '';
+        showBatchStatus('info', `⏳ 正在讀取 ${file.name}...`);
+        try {
+          const buf = await file.arrayBuffer();
+          const entries = await parseZipEntries(buf);
+          batchExtractedImages = [];
+          let docText = '';
+          const mimeMap = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
+
+          for (const ent of entries) {
+            const lower = ent.name.toLowerCase();
+            if (lower === 'word/document.xml') {
+              const rawBytes = await decompressZipEntry(ent);
+              if (rawBytes) {
+                const xmlStr = new TextDecoder('utf-8').decode(rawBytes);
+                const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
+                const paras = Array.from(doc.getElementsByTagName('w:p'));
+                docText = paras.map(p => p.textContent || '').join('\n').trim();
+              }
+            }
+            const m = lower.match(/\.(png|jpe?g|webp|gif)$/);
+            if (m && (lower.startsWith('data/') || lower.startsWith('word/media/')) && !lower.includes('preview')) {
+              const rawBytes = await decompressZipEntry(ent);
+              if (rawBytes) {
+                const blob = new Blob([rawBytes], { type: mimeMap[m[1]] || 'image/png' });
+                const dataUrl = await readBlobAsDataUrl(blob);
+                if (dataUrl) {
+                  batchExtractedImages.push({ id: `${Date.now()}_${batchExtractedImages.length}`, name: ent.name, dataUrl });
+                }
+              }
+            }
+          }
+
+          if (docText) {
+            batchRawInput.value = docText;
+          }
+          renderBatchExtractedTray();
+          showBatchStatus('success', `✅ 已從 ${file.name} 擷取 ${batchExtractedImages.length} 張圖片${docText ? '與文字內容' : '（請於下方貼上文字後按「⚡ 解析並預視全部」）'}！`);
+        } catch (err) {
+          showBatchStatus('error', `❌ 讀取檔案失敗：${err.message}`);
+        }
+      });
 
       function showBatchStatus(type, html) {
         batchStatusBox.className = `status-box show ${type}`;
@@ -2946,18 +3094,19 @@ if (typeof module !== 'undefined' && module.exports) {
       }
 
       async function renderBatchCardItem(orderObj) {
+        const imgs = orderObj.images || [];
         const items = [];
-        if (orderObj.flowerText) items.push({ type: 'flower', text: orderObj.flowerText, images: [], addonImages: [] });
-        if (orderObj.cakeText) items.push({ type: 'cake', text: orderObj.cakeText, images: [], addonImages: [] });
-        if (items.length === 0) items.push({ type: 'cake', text: orderObj.rawText, images: [], addonImages: [] });
+        if (orderObj.flowerText) items.push({ type: 'flower', text: orderObj.flowerText, images: orderObj.cakeText ? [] : imgs, addonImages: [] });
+        if (orderObj.cakeText) items.push({ type: 'cake', text: orderObj.cakeText, images: imgs, addonImages: [] });
+        if (items.length === 0) items.push({ type: 'cake', text: orderObj.rawText, images: imgs, addonImages: [] });
 
         if (window.CardRenderer && typeof window.CardRenderer.renderCard === 'function') {
           orderObj.canvas = await window.CardRenderer.renderCard(orderObj.state, {
             items,
             flowerText: orderObj.flowerText,
             cakeText: orderObj.cakeText,
-            flowerImages: [],
-            cakeImages: [],
+            flowerImages: orderObj.cakeText ? [] : imgs,
+            cakeImages: orderObj.cakeText ? imgs : [],
             addonImages: []
           });
         }
@@ -3097,7 +3246,8 @@ if (typeof module !== 'undefined' && module.exports) {
             dateTag,
             filename,
             canvas: null,
-            isRescheduled
+            isRescheduled,
+            images: []
           };
           await renderBatchCardItem(ord);
           batchOrders.push(ord);
@@ -3109,6 +3259,9 @@ if (typeof module !== 'undefined' && module.exports) {
       btnBatchClear.addEventListener('click', () => {
         batchRawInput.value = '';
         batchOrders = [];
+        batchExtractedImages = [];
+        batchNextAttachIdx = 0;
+        renderBatchExtractedTray();
         batchPreviewList.innerHTML = '';
         batchCountHint.textContent = '尚未解析訂單';
         batchStatusBox.className = 'status-box';
@@ -3170,7 +3323,7 @@ if (typeof module !== 'undefined' && module.exports) {
               pickupDate: (st.pickup && st.pickup.date) || ord.dateTag,
               dateTag: ord.dateTag,
               lineName: lineNameVal,
-              preserveExistingIfNoPhoto: true,
+              preserveExistingIfNoPhoto: !ord.images || ord.images.length === 0,
               base64Image: ord.canvas.toDataURL('image/png')
             };
             await Promise.all([
