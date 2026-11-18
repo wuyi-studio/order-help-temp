@@ -183,6 +183,7 @@
       border-radius: 10px;
       padding: 10px 12px;
       font-size: 13px;
+      font-weight: 400;
       white-space: pre-wrap;
       word-break: break-word;
       outline: none;
@@ -439,18 +440,22 @@
           </div>
         </div>
 
-        <div class="form-grid-3">
+        <div class="form-grid">
           <div class="field">
-            <label>自取地點</label>
-            <input type="text" id="fieldLocation" placeholder="板橋店 / 內湖店">
+            <label>LINE 名稱</label>
+            <input type="text" id="fieldLineName" placeholder="LINE 名稱">
           </div>
           <div class="field">
-            <label>顧客姓名 / LINE 名稱</label>
-            <input type="text" id="fieldCustomerName" placeholder="姓名">
+            <label>顧客姓名</label>
+            <input type="text" id="fieldCustomerName" placeholder="真實姓名">
           </div>
           <div class="field">
             <label>聯絡電話</label>
             <input type="text" id="fieldPhone" placeholder="09xx-xxx-xxx">
+          </div>
+          <div class="field">
+            <label>自取地點</label>
+            <input type="text" id="fieldLocation" placeholder="台南市中西區友愛街93號">
           </div>
         </div>
 
@@ -1934,6 +1939,7 @@ if (typeof module !== 'undefined' && module.exports) {
       const fieldPickupDate = document.getElementById('fieldPickupDate');
       const fieldPickupTime = document.getElementById('fieldPickupTime');
       const fieldLocation = document.getElementById('fieldLocation');
+      const fieldLineName = document.getElementById('fieldLineName');
       const fieldCustomerName = document.getElementById('fieldCustomerName');
       const fieldPhone = document.getElementById('fieldPhone');
       const fieldCakeText = document.getElementById('fieldCakeText');
@@ -1951,14 +1957,16 @@ if (typeof module !== 'undefined' && module.exports) {
       const settingsDrawer = document.getElementById('settingsDrawer');
 
       let uploadedImages = []; // { id, dataUrl, category: 'cake' | 'flower' | 'addon' }
-      let parsedState = window.Extractor ? window.Extractor.createEmptyOrderState() : {
-        orderType: 'cake',
-        pickup: { date: '', dateTag: '', time: '', location: '' },
-        cake: { size: '', flavor: '', inscription: '', addon: '', rawCakeText: '' },
-        flower: { budget: '', color: '', paper: '', rawFlowerText: '' },
-        customer: { lineName: '', name: '', phone: '' },
-        rawText: ''
-      };
+      let parsedState = (window.Extractor && typeof window.Extractor._createEmptyOrderState === 'function')
+        ? window.Extractor._createEmptyOrderState()
+        : {
+            orderType: 'cake',
+            pickup: { date: '', dateTag: '', time: '', location: '' },
+            cake: { style: '', inscriptionLabel: '題字', inscription: '', size: '', flavor: '', addon: '' },
+            flower: { budget: '', color: '', paper: '', note: '' },
+            customer: { lineName: '', name: '', phone: '' },
+            rawText: ''
+          };
       let currentCanvas = null;
 
       function getWebhookUrl() {
@@ -2105,29 +2113,32 @@ if (typeof module !== 'undefined' && module.exports) {
 
       function extractPricingFromText(text) {
         if (!text) return '';
-        if (window.Extractor && typeof window.Extractor.parsePricingText === 'function') {
-          const parsed = window.Extractor.parsePricingText(text);
-          if (parsed && parsed.rawPricingText) return parsed.rawPricingText;
+        if (window.Extractor && typeof window.Extractor.extractPricingFromOrderText === 'function') {
+          const extracted = window.Extractor.extractPricingFromOrderText(text);
+          if (extracted) return extracted;
         }
         const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        const priceLines = lines.filter(l => /\$/.test(l) || /^總共/.test(l));
+        const priceLines = lines.filter(l => /\$/.test(l) || /^總共/.test(l) || /^\d+(?:\s*\+\s*\d+)+\s*=\s*\d+/.test(l));
         return priceLines.join('\n');
       }
 
       function extractTotalFromPricing(pricingText) {
         if (!pricingText) return '0';
+        const mTotal = pricingText.match(/總共[^\d$]*\$?\s*(\d[\d,]*)/);
+        if (mTotal) return mTotal[1].replace(/,/g, '');
+        const mEq = pricingText.match(/=\s*(\d[\d,]*)\s*$/m);
+        if (mEq) return mEq[1].replace(/,/g, '');
         if (window.Extractor && typeof window.Extractor.parsePricingText === 'function') {
           const parsed = window.Extractor.parsePricingText(pricingText);
-          if (parsed && parsed.total && parsed.total !== '0') return parsed.total;
+          if (parsed && parsed.total) return String(parsed.total);
         }
-        const m = pricingText.match(/總共[^\d$]*\$?\s*(\d[\d,]*)/);
-        if (m) return m[1].replace(/,/g, '');
         return '0';
       }
 
       function parseNoteContent() {
-        const text = getNotePlainText();
-        if (!text) return;
+        const raw = getNotePlainText();
+        if (!raw) return;
+        const text = raw.replace(/\uFFFC/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
         if (window.Extractor && typeof window.Extractor.parseOrderText === 'function') {
           parsedState = window.Extractor.parseOrderText(text);
@@ -2140,11 +2151,17 @@ if (typeof module !== 'undefined' && module.exports) {
         fieldPickupDate.value = dateVal;
         fieldPickupTime.value = (parsedState.pickup && parsedState.pickup.time) || '';
         fieldLocation.value = (parsedState.pickup && parsedState.pickup.location) || '';
-        fieldCustomerName.value = (parsedState.customer && (parsedState.customer.lineName || parsedState.customer.name)) || '';
+        fieldLineName.value = (parsedState.customer && parsedState.customer.lineName) || '';
+        fieldCustomerName.value = (parsedState.customer && parsedState.customer.name) || '';
         fieldPhone.value = (parsedState.customer && parsedState.customer.phone) || '';
 
-        const cakeTxt = (parsedState.cake && parsedState.cake.rawCakeText) || '';
-        const flowerTxt = (parsedState.flower && parsedState.flower.rawFlowerText) || '';
+        let cakeTxt = '';
+        let flowerTxt = '';
+        if (window.Extractor && typeof window.Extractor.splitOrderText === 'function') {
+          const split = window.Extractor.splitOrderText(text);
+          cakeTxt = (split.cakeText && split.cakeText !== '無') ? split.cakeText : '';
+          flowerTxt = (split.flowerText && split.flowerText !== '無') ? split.flowerText : '';
+        }
         fieldCakeText.value = cakeTxt;
         fieldFlowerText.value = flowerTxt;
         fieldPricingText.value = extractPricingFromText(text);
@@ -2155,6 +2172,7 @@ if (typeof module !== 'undefined' && module.exports) {
       function syncFieldsToState() {
         const dateTagVal = fieldDateTag.value.trim() || inferDateTag(fieldPickupDate.value.trim());
         const custName = fieldCustomerName.value.trim();
+        const lineName = fieldLineName.value.trim();
 
         parsedState.pickup = parsedState.pickup || {};
         parsedState.pickup.date = fieldPickupDate.value.trim() || dateTagVal;
@@ -2163,8 +2181,8 @@ if (typeof module !== 'undefined' && module.exports) {
         parsedState.pickup.location = fieldLocation.value.trim();
 
         parsedState.customer = parsedState.customer || {};
-        parsedState.customer.name = custName;
-        parsedState.customer.lineName = custName;
+        parsedState.customer.name = custName || lineName;
+        parsedState.customer.lineName = lineName || custName;
         parsedState.customer.phone = fieldPhone.value.trim();
 
         parsedState.cake = parsedState.cake || {};
@@ -2175,7 +2193,7 @@ if (typeof module !== 'undefined' && module.exports) {
 
         const hasCake = Boolean(parsedState.cake.rawCakeText);
         const hasFlower = Boolean(parsedState.flower.rawFlowerText);
-        if (hasCake && hasFlower) parsedState.orderType = 'both';
+        if (hasCake && hasFlower) parsedState.orderType = 'combined';
         else if (hasFlower) parsedState.orderType = 'flower';
         else parsedState.orderType = 'cake';
 
@@ -2237,21 +2255,35 @@ if (typeof module !== 'undefined' && module.exports) {
       }
 
       function extractImagesFromHtml(html) {
-        if (!html) return [];
+        if (!html) return { valid: [], blocked: [] };
         const doc = new DOMParser().parseFromString(html, 'text/html');
-        return Array.from(doc.querySelectorAll('img'))
-          .map(img => img.getAttribute('src') || '')
-          .filter(src => src && (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')));
+        const valid = [];
+        const blocked = [];
+        for (const img of Array.from(doc.querySelectorAll('img'))) {
+          const src = img.getAttribute('src') || '';
+          if (!src) continue;
+          if (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')) {
+            valid.push(src);
+          } else {
+            blocked.push(src);
+          }
+        }
+        return { valid, blocked };
       }
 
       function scanNoteDomForImages() {
         const domImgs = Array.from(rawNoteInput.querySelectorAll('img'));
+        const blocked = [];
         for (const imgEl of domImgs) {
           const src = imgEl.getAttribute('src') || '';
+          if (!src) continue;
           if (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')) {
             addImageDataUrl(src);
+          } else {
+            blocked.push(src);
           }
         }
+        return blocked;
       }
 
       async function handlePasteEvent(e) {
@@ -2261,20 +2293,22 @@ if (typeof module !== 'undefined' && module.exports) {
         // 1. 必須在任何 await 之前同步讀取所有剪貼簿資料，否則瀏覽器會清空 clipboardData！
         const plain = cd.getData('text/plain') || '';
         const html = cd.getData('text/html') || '';
-        const htmlImgSrcs = extractImagesFromHtml(html);
+        const { valid: htmlImgSrcs, blocked: htmlBlockedSrcs } = extractImagesFromHtml(html);
 
         const imageBlobs = [];
         if (cd.items) {
           for (const item of Array.from(cd.items)) {
-            if (item.type && item.type.startsWith('image/')) {
+            if (item.kind === 'file' || (item.type && item.type.startsWith('image/'))) {
               const f = item.getAsFile();
-              if (f) imageBlobs.push(f);
+              if (f && (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name || ''))) {
+                imageBlobs.push(f);
+              }
             }
           }
         }
         if (imageBlobs.length === 0 && cd.files && cd.files.length > 0) {
           for (const f of Array.from(cd.files)) {
-            if (f.type && f.type.startsWith('image/')) {
+            if (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name || '')) {
               imageBlobs.push(f);
             }
           }
@@ -2283,10 +2317,11 @@ if (typeof module !== 'undefined' && module.exports) {
         const isInsideNoteBox = (e.target === rawNoteInput || rawNoteInput.contains(e.target));
         const isOtherInput = !isInsideNoteBox && (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
 
-        // 若游標不在其他輸入框，且不是在 rawNoteInput 內貼上，幫忙把文字塞進 rawNoteInput
-        if (!isInsideNoteBox && !isOtherInput && plain.trim()) {
+        // 保持原本格式且不帶粗體/多餘 HTML 樣式：若有純文字就直接以純文字貼入 rawNoteInput
+        if (!isOtherInput && plain.trim()) {
           e.preventDefault();
-          setNotePlainText(plain);
+          const cleanPlain = plain.replace(/\uFFFC/g, '').replace(/\r\n/g, '\n');
+          setNotePlainText(cleanPlain);
           rawNoteInput.focus();
         }
 
@@ -2305,10 +2340,13 @@ if (typeof module !== 'undefined' && module.exports) {
 
         // 4. 等待 contenteditable 原生貼上完成後，再掃描 DOM 內的圖片並解析文字
         setTimeout(() => {
-          scanNoteDomForImages();
+          const domBlocked = scanNoteDomForImages();
           parseNoteContent();
           const txtLen = getNotePlainText().length;
-          if (txtLen > 0 || uploadedImages.length > 0) {
+          const totalBlocked = htmlBlockedSrcs.length + domBlocked.length;
+          if (totalBlocked > 0 && uploadedImages.length === 0) {
+            showStatus('warn', `📋 已貼上文字（${txtLen} 字），但偵測到 Mac 備忘錄本機圖片路徑（瀏覽器安全限制無法直接讀取）。<br>👉 請直接把圖片<strong>拖曳</strong>到「🖼️ 附帶圖片」框，或對圖片按右鍵「<strong>拷貝影像</strong>」再貼上！`);
+          } else if (txtLen > 0 || uploadedImages.length > 0) {
             showStatus('info', `📋 已貼上記事本內容！（文字 ${txtLen} 字、圖片 ${uploadedImages.length} 張）`);
           }
         }, 60);
@@ -2321,7 +2359,7 @@ if (typeof module !== 'undefined' && module.exports) {
         parseNoteContent();
       });
 
-      [fieldDateTag, fieldPickupDate, fieldPickupTime, fieldLocation, fieldCustomerName, fieldPhone, fieldCakeText, fieldFlowerText, fieldPricingText].forEach((el) => {
+      [fieldDateTag, fieldPickupDate, fieldPickupTime, fieldLocation, fieldLineName, fieldCustomerName, fieldPhone, fieldCakeText, fieldFlowerText, fieldPricingText].forEach((el) => {
         el.addEventListener('input', () => refreshCardPreview());
       });
 
@@ -2342,7 +2380,7 @@ if (typeof module !== 'undefined' && module.exports) {
                 } else if (type === 'text/html') {
                   const blob = await clipItem.getType(type);
                   const htmlTxt = await blob.text();
-                  const srcs = extractImagesFromHtml(htmlTxt);
+                  const { valid: srcs } = extractImagesFromHtml(htmlTxt);
                   for (const src of srcs) {
                     addImageDataUrl(src);
                     gotAny = true;
@@ -2426,6 +2464,7 @@ if (typeof module !== 'undefined' && module.exports) {
         fieldPickupDate.value = '';
         fieldPickupTime.value = '';
         fieldLocation.value = '';
+        fieldLineName.value = '';
         fieldCustomerName.value = '';
         fieldPhone.value = '';
         fieldCakeText.value = '';
@@ -2498,6 +2537,7 @@ if (typeof module !== 'undefined' && module.exports) {
         const dataUrl = currentCanvas.toDataURL('image/png');
         const totalVal = extractTotalFromPricing(fieldPricingText.value);
 
+        const hasFlowerText = Boolean(fieldFlowerText.value.trim());
         const sheetsPayload = {
           pickupDate: dateTagVal || parsedState.pickup.date,
           dateTag: dateTagVal,
@@ -2511,9 +2551,9 @@ if (typeof module !== 'undefined' && module.exports) {
           cakeFlavor: (parsedState.cake && parsedState.cake.flavor) || '',
           cakeInscription: (parsedState.cake && parsedState.cake.inscription) || '',
           addon: (parsedState.cake && parsedState.cake.addon) || '',
-          flowerBudget: (parsedState.flower && parsedState.flower.budget) || '',
-          flowerColor: (parsedState.flower && parsedState.flower.color) || '',
-          flowerPaper: (parsedState.flower && parsedState.flower.paper) || '',
+          flowerBudget: hasFlowerText ? ((parsedState.flower && parsedState.flower.budget) || '') : '',
+          flowerColor: hasFlowerText ? ((parsedState.flower && parsedState.flower.color) || '') : '',
+          flowerPaper: hasFlowerText ? ((parsedState.flower && parsedState.flower.paper) || '') : '',
           totalPrice: totalVal,
           cakeText: fieldCakeText.value.trim(),
           flowerText: fieldFlowerText.value.trim(),
