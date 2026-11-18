@@ -477,10 +477,10 @@
     </div>
 
     <div class="batch-section" id="batchSection">
-      <div class="panel">
+      <div class="panel" id="batchDropPanel">
         <div class="panel-title">
-          <span>📦 批次輸入多筆訂單（支援匯入 .pages / .docx 圖片＋預視所有小卡）</span>
-          <div style="display: flex; gap: 8px;">
+          <span>📦 批次輸入多筆訂單（直接拖曳或匯入 .pages / .docx，自動分單配圖＋預視）</span>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             <input type="file" id="batchPagesFile" accept=".pages,.docx" style="display: none;">
             <button type="button" class="btn btn-soft" id="btnBatchImportPages">📄 匯入 Pages / Word 檔</button>
             <button type="button" class="btn btn-soft" id="btnBatchParse">⚡ 解析並預視全部</button>
@@ -489,14 +489,17 @@
         </div>
         <div id="batchImagesTray" class="images-section" style="display: none; margin-bottom: 12px;">
           <div class="images-header">
-            <strong style="font-size: 13px; color: #881337;">🖼️ 從檔案擷取的圖片（點選圖片可依序附加到下方訂單）</strong>
+            <strong style="font-size: 13px; color: #881337;">🖼️ 檔案內擷取的圖片（已自動依序配對，也可點選補加到最後一筆／指定訂單）</strong>
           </div>
           <div class="images-list" id="batchImagesList"></div>
         </div>
-        <textarea id="batchRawInput" rows="8" placeholder="請一次貼上多筆訂單內容（或匯入由 Pages 另存的 .docx 檔自動帶入文字＋圖片）！&#10;&#10;💡 分隔方式：&#10;1. 每筆訂單之間用 --- 或 === 隔開，或留兩行以上空白&#10;2. 若匯入 .pages 檔，會自動擷取檔案內的所有圖片；搭配貼上文字即可快速配對預覽！"></textarea>
+        <textarea id="batchRawInput" rows="7" placeholder="直接把 .pages 檔拖曳到這裡，或按右上角「📄 匯入 Pages / Word 檔」即可自動讀取文字＋圖片並產生所有小卡預覽！&#10;&#10;💡 手動貼上文字分隔方式：每筆訂單之間空 5 行以上（或用 --- / === 隔開）。"></textarea>
         <div style="display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap;">
           <button type="button" class="btn btn-primary" id="btnBatchSendAll" style="width: auto; padding: 11px 20px;">
             🚀 全部送出至 Google Drive ＋ 試算表
+          </button>
+          <button type="button" class="btn" id="btnBatchDownloadAll" style="padding: 11px 16px;">
+            💾 全部下載圖檔
           </button>
           <span class="hint" id="batchCountHint" style="margin-top: 0;">尚未解析訂單</span>
         </div>
@@ -2988,6 +2991,242 @@ if (typeof module !== 'undefined' && module.exports) {
         return null;
       }
 
+      // ---- Apple .pages (IWA Snappy + Protobuf) 原生解析器 ----
+      function decompressIwaBuffer(uint8) {
+        const chunks = [];
+        let i = 0;
+        while (i + 4 <= uint8.length) {
+          const typ = uint8[i];
+          const len = uint8[i + 1] | (uint8[i + 2] << 8) | (uint8[i + 3] << 16);
+          i += 4;
+          const block = uint8.subarray(i, i + len);
+          i += len;
+          if (typ !== 0) continue;
+          let pos = 0;
+          let shift = 0;
+          while (pos < block.length) {
+            const b = block[pos++];
+            if (!(b & 0x80)) break;
+            shift += 7;
+          }
+          const out = [];
+          while (pos < block.length) {
+            const tag = block[pos++];
+            const kind = tag & 3;
+            if (kind === 0) {
+              let l = tag >> 2;
+              if (l < 60) {
+                l += 1;
+              } else {
+                const nb = l - 59;
+                l = 0;
+                for (let k = 0; k < nb; k++) l |= block[pos++] << (8 * k);
+                l += 1;
+              }
+              for (let k = 0; k < l; k++) out.push(block[pos++]);
+            } else {
+              let l = 0;
+              let off = 0;
+              if (kind === 1) {
+                l = ((tag >> 2) & 7) + 4;
+                off = ((tag >> 5) << 8) | block[pos++];
+              } else if (kind === 2) {
+                l = (tag >> 2) + 1;
+                off = block[pos] | (block[pos + 1] << 8);
+                pos += 2;
+              } else {
+                l = (tag >> 2) + 1;
+                off = (block[pos] | (block[pos + 1] << 8) | (block[pos + 2] << 16) | (block[pos + 3] << 24)) >>> 0;
+                pos += 4;
+              }
+              for (let k = 0; k < l; k++) out.push(out[out.length - off]);
+            }
+          }
+          chunks.push(new Uint8Array(out));
+        }
+        const total = chunks.reduce((s, c) => s + c.length, 0);
+        const merged = new Uint8Array(total);
+        let offset = 0;
+        for (const c of chunks) {
+          merged.set(c, offset);
+          offset += c.length;
+        }
+        return merged;
+      }
+
+      function readPbVarint(buf, p) {
+        let v = 0;
+        let mul = 1;
+        while (p < buf.length) {
+          const b = buf[p++];
+          v += (b & 0x7f) * mul;
+          if (!(b & 0x80)) break;
+          mul *= 128;
+        }
+        return [v, p];
+      }
+
+      function parsePbFields(buf) {
+        const fields = [];
+        let p = 0;
+        while (p < buf.length) {
+          let tag;
+          [tag, p] = readPbVarint(buf, p);
+          const fn = Math.floor(tag / 8);
+          const wt = tag & 7;
+          if (wt === 0) {
+            let val;
+            [val, p] = readPbVarint(buf, p);
+            fields.push({ fn, wt, val });
+          } else if (wt === 1) {
+            fields.push({ fn, wt, val: buf.subarray(p, p + 8) });
+            p += 8;
+          } else if (wt === 2) {
+            let ln;
+            [ln, p] = readPbVarint(buf, p);
+            fields.push({ fn, wt, val: buf.subarray(p, p + ln) });
+            p += ln;
+          } else if (wt === 5) {
+            fields.push({ fn, wt, val: buf.subarray(p, p + 4) });
+            p += 4;
+          } else {
+            break;
+          }
+        }
+        return fields;
+      }
+
+      function parseIwaArchives(buf) {
+        const archives = new Map();
+        let p = 0;
+        while (p < buf.length) {
+          let infoLen;
+          [infoLen, p] = readPbVarint(buf, p);
+          const infoFields = parsePbFields(buf.subarray(p, p + infoLen));
+          p += infoLen;
+          let ident = null;
+          const msgs = [];
+          for (const f of infoFields) {
+            if (f.fn === 1 && f.wt === 0) ident = f.val;
+            else if (f.fn === 2 && f.wt === 2) {
+              let mtype = null;
+              let mlen = 0;
+              for (const mf of parsePbFields(f.val)) {
+                if (mf.fn === 1 && mf.wt === 0) mtype = mf.val;
+                else if (mf.fn === 3 && mf.wt === 0) mlen = mf.val;
+              }
+              msgs.push({ mtype, mlen });
+            }
+          }
+          const body = [];
+          for (const m of msgs) {
+            body.push({ mtype: m.mtype, data: buf.subarray(p, p + m.mlen) });
+            p += m.mlen;
+          }
+          if (ident !== null) archives.set(ident, body);
+        }
+        return archives;
+      }
+
+      async function extractPagesIwaContent(entries) {
+        const docEntry = entries.find(e => e.name.toLowerCase() === 'index/document.iwa');
+        const metaEntry = entries.find(e => e.name.toLowerCase() === 'index/metadata.iwa');
+        if (!docEntry || !metaEntry) return null;
+
+        const docBytes = decompressIwaBuffer(await decompressZipEntry(docEntry));
+        const metaBytes = decompressIwaBuffer(await decompressZipEntry(metaEntry));
+        const docArchives = parseIwaArchives(docBytes);
+        const metaArchives = parseIwaArchives(metaBytes);
+        const decoder = new TextDecoder('utf-8');
+
+        // 1. 建立 Metadata data_id -> Data/檔名 對照表
+        const dataMap = new Map();
+        for (const body of metaArchives.values()) {
+          for (const msg of body) {
+            for (const f of parsePbFields(msg.data)) {
+              if (f.fn === 4 && f.wt === 2) {
+                let did = null;
+                let fname = '';
+                let fallback = '';
+                for (const sf of parsePbFields(f.val)) {
+                  if (sf.fn === 1 && sf.wt === 0) did = sf.val;
+                  else if (sf.fn === 3 && sf.wt === 2) fallback = decoder.decode(sf.val);
+                  else if (sf.fn === 4 && sf.wt === 2) fname = decoder.decode(sf.val);
+                }
+                if (did !== null) dataMap.set(did, fname || fallback);
+              }
+            }
+          }
+        }
+
+        // 2. 找出主文字儲存體 (mtype === 2001 且含最長文字或取貨/蛋糕字樣)
+        let bestText = '';
+        let bestMsgData = null;
+        for (const body of docArchives.values()) {
+          for (const msg of body) {
+            if (msg.mtype !== 2001) continue;
+            for (const f of parsePbFields(msg.data)) {
+              if (f.fn === 3 && f.wt === 2) {
+                const candidate = decoder.decode(f.val);
+                if (candidate.length > bestText.length) {
+                  bestText = candidate;
+                  bestMsgData = msg.data;
+                }
+              }
+            }
+          }
+        }
+        if (!bestText || !bestMsgData) return null;
+
+        // 3. 解析每個 \uFFFC 在文字中的字元偏移量與對應圖片檔案
+        const attachments = []; // { charOffset, filename }
+        for (const f of parsePbFields(bestMsgData)) {
+          if (f.fn === 9 && f.wt === 2) {
+            for (const sf of parsePbFields(f.val)) {
+              if (sf.wt !== 2) continue;
+              let charOffset = 0;
+              let attId = null;
+              for (const xf of parsePbFields(sf.val)) {
+                if (xf.fn === 1 && xf.wt === 0) charOffset = xf.val;
+                else if (xf.fn === 2 && xf.wt === 2) {
+                  for (const yf of parsePbFields(xf.val)) {
+                    if (yf.fn === 1 && yf.wt === 0) attId = yf.val;
+                  }
+                }
+              }
+              if (attId !== null) {
+                let drawableId = null;
+                for (const amsg of (docArchives.get(attId) || [])) {
+                  for (const af of parsePbFields(amsg.data)) {
+                    if (af.fn === 1 && af.wt === 2) {
+                      for (const xf of parsePbFields(af.val)) {
+                        if (xf.fn === 1 && xf.wt === 0) drawableId = xf.val;
+                      }
+                    }
+                  }
+                }
+                let imgDataId = null;
+                if (drawableId !== null) {
+                  for (const dmsg of (docArchives.get(drawableId) || [])) {
+                    for (const df of parsePbFields(dmsg.data)) {
+                      if ((df.fn === 11 || df.fn === 13) && df.wt === 2) {
+                        for (const xf of parsePbFields(df.val)) {
+                          if (xf.fn === 1 && xf.wt === 0) imgDataId = xf.val;
+                        }
+                      }
+                    }
+                  }
+                }
+                const fname = imgDataId !== null ? dataMap.get(imgDataId) : null;
+                if (fname) attachments.push({ charOffset, filename: fname });
+              }
+            }
+          }
+        }
+        attachments.sort((a, b) => a.charOffset - b.charOffset);
+        return { text: bestText, attachments };
+      }
+
       function renderBatchExtractedTray() {
         batchImagesList.innerHTML = '';
         if (batchExtractedImages.length === 0) {
@@ -2999,13 +3238,13 @@ if (typeof module !== 'undefined' && module.exports) {
           const chip = document.createElement('div');
           chip.className = 'img-chip';
           chip.style.cursor = 'pointer';
-          chip.title = '點選可附加到下方訂單';
+          chip.title = '點選可附加到最後一筆或依序附加到訂單';
           const img = document.createElement('img');
           img.src = imgObj.dataUrl;
           const lbl = document.createElement('span');
           lbl.style.fontSize = '11px';
           lbl.style.color = '#475569';
-          lbl.textContent = '＋ 附加到訂單';
+          lbl.textContent = '＋ 附加';
           chip.appendChild(img);
           chip.appendChild(lbl);
           chip.onclick = async () => {
@@ -3015,8 +3254,8 @@ if (typeof module !== 'undefined' && module.exports) {
             }
             const target = batchOrders[batchNextAttachIdx % batchOrders.length];
             target.images = target.images || [];
-            if (!target.images.includes(imgObj.dataUrl)) {
-              target.images.push(imgObj.dataUrl);
+            if (!target.images.some(x => x.dataUrl === imgObj.dataUrl)) {
+              target.images.push({ dataUrl: imgObj.dataUrl, category: target.cakeText ? 'cake' : 'flower' });
             }
             batchNextAttachIdx++;
             await renderBatchCardItem(target);
@@ -3026,50 +3265,184 @@ if (typeof module !== 'undefined' && module.exports) {
         });
       }
 
-      btnBatchImportPages.addEventListener('click', () => batchPagesFile.click());
-      batchPagesFile.addEventListener('change', async (e) => {
-        const file = e.target.files && e.target.files[0];
+      async function buildBatchOrderObj(rawChunk, idx, attachedImgs = []) {
+        // 移除檔案開頭單獨的日期標題列或「＝＝＝」分隔列，保留真正訂單內容
+        const cleaned = rawChunk
+          .replace(/\uFFFC/g, '')
+          .replace(/^(?:\d{4}年\d{1,2}月\d{1,2}日\s*,?\s*\n+|[,，＝=—\-_]{3,}\s*\n+)/g, '')
+          .trim();
+        const st = (window.Extractor && typeof window.Extractor.parseOrderText === 'function')
+          ? window.Extractor.parseOrderText(cleaned)
+          : { orderType: 'cake', pickup: {}, cake: {}, flower: {}, customer: {} };
+        let cakeText = '';
+        let flowerText = '';
+        if (window.Extractor && typeof window.Extractor.splitOrderText === 'function') {
+          const sp = window.Extractor.splitOrderText(cleaned);
+          cakeText = (sp.cakeText && sp.cakeText !== '無') ? sp.cakeText : '';
+          flowerText = (sp.flowerText && sp.flowerText !== '無') ? sp.flowerText : '';
+        }
+        const dateVal = (st.pickup && st.pickup.date) || '';
+        const dateTag = (st.pickup && st.pickup.dateTag) || inferDateTag(dateVal);
+        const lineName = ((st.customer && (st.customer.lineName || st.customer.name)) || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+        const filename = buildCardFilename(dateTag, (st.pickup && st.pickup.time) || '', lineName);
+        const isRescheduled = /這位客人已改過期/.test(cleaned);
+
+        const ord = {
+          id: `${Date.now()}_${idx}`,
+          rawText: cleaned,
+          state: st,
+          cakeText,
+          flowerText,
+          pricingText: extractPricingFromText(cleaned),
+          dateTag,
+          filename,
+          canvas: null,
+          isRescheduled,
+          images: attachedImgs
+        };
+        await renderBatchCardItem(ord);
+        return ord;
+      }
+
+      function splitTextWithRanges(raw) {
+        const normalized = (raw || '').replace(/\r\n/g, '\n');
+        // 優先偵測「空超過五行」（即連續 5 個以上換行，允許中間夾帶空白或 \u00a0）
+        const fiveBlankRe = /\n(?:[ \t\u00a0]*\n){4,}/g;
+        let sepRe = null;
+        if (fiveBlankRe.test(normalized)) {
+          sepRe = /\n(?:[ \t\u00a0]*\n){4,}/g;
+        } else if (/^\s*(?:---|===|＝＝＝|___)+\s*$/m.test(normalized)) {
+          sepRe = /^\s*(?:---|===|＝＝＝|___)+\s*$/gm;
+        } else {
+          sepRe = /\n(?:[ \t\u00a0]*\n){2,}/g;
+        }
+        const ranges = [];
+        let last = 0;
+        let m;
+        while ((m = sepRe.exec(normalized)) !== null) {
+          const text = normalized.slice(last, m.index);
+          if (text.replace(/[\uFFFC\s\u00a0,，＝=—\-_]/g, '').length > 0) {
+            ranges.push({ start: last, end: m.index, text });
+          }
+          last = m.index + m[0].length;
+        }
+        const tail = normalized.slice(last);
+        if (tail.replace(/[\uFFFC\s\u00a0,，＝=—\-_]/g, '').length > 0) {
+          ranges.push({ start: last, end: normalized.length, text: tail });
+        }
+        return ranges;
+      }
+
+      async function importBatchFile(file) {
         if (!file) return;
-        batchPagesFile.value = '';
-        showBatchStatus('info', `⏳ 正在讀取 ${file.name}...`);
+        showBatchStatus('info', `⏳ 正在讀取 ${file.name}（解析文字與圖片）...`);
         try {
           const buf = await file.arrayBuffer();
           const entries = await parseZipEntries(buf);
           batchExtractedImages = [];
-          let docText = '';
           const mimeMap = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
+          const entryDataUrlMap = new Map();
 
           for (const ent of entries) {
             const lower = ent.name.toLowerCase();
-            if (lower === 'word/document.xml') {
-              const rawBytes = await decompressZipEntry(ent);
-              if (rawBytes) {
-                const xmlStr = new TextDecoder('utf-8').decode(rawBytes);
-                const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
-                const paras = Array.from(doc.getElementsByTagName('w:p'));
-                docText = paras.map(p => p.textContent || '').join('\n').trim();
-              }
-            }
             const m = lower.match(/\.(png|jpe?g|webp|gif)$/);
-            if (m && (lower.startsWith('data/') || lower.startsWith('word/media/')) && !lower.includes('preview')) {
+            if (m && (lower.startsWith('data/') || lower.startsWith('word/media/')) && !lower.includes('preview') && !lower.includes('-small-')) {
               const rawBytes = await decompressZipEntry(ent);
               if (rawBytes) {
                 const blob = new Blob([rawBytes], { type: mimeMap[m[1]] || 'image/png' });
                 const dataUrl = await readBlobAsDataUrl(blob);
                 if (dataUrl) {
-                  batchExtractedImages.push({ id: `${Date.now()}_${batchExtractedImages.length}`, name: ent.name, dataUrl });
+                  const base = ent.name.split('/').pop();
+                  entryDataUrlMap.set(base, dataUrl);
+                  entryDataUrlMap.set(ent.name, dataUrl);
+                  batchExtractedImages.push({ id: `${Date.now()}_${batchExtractedImages.length}`, name: base, dataUrl });
                 }
               }
             }
           }
 
-          if (docText) {
-            batchRawInput.value = docText;
+          // 嘗試解析 Apple .pages (IWA) 原生文字與每張圖對應位置
+          const pagesData = await extractPagesIwaContent(entries);
+          if (pagesData && pagesData.text) {
+            const rawText = pagesData.text;
+            batchRawInput.value = rawText.replace(/\uFFFC/g, '');
+            const ranges = splitTextWithRanges(rawText);
+            batchOrders = [];
+            for (let i = 0; i < ranges.length; i++) {
+              const rng = ranges[i];
+              // 判斷花束與蛋糕邊界（2️⃣ 或 🎂 出現的位置）
+              const cakeMarker = rng.text.search(/2️⃣|🎂客製化蛋糕|蛋糕尺寸[：:]/);
+              const splitBoundary = cakeMarker >= 0 ? rng.start + cakeMarker : Infinity;
+
+              const chunkImgs = [];
+              for (const att of pagesData.attachments) {
+                if (att.charOffset >= rng.start && att.charOffset <= rng.end) {
+                  const dataUrl = entryDataUrlMap.get(att.filename) || entryDataUrlMap.get(`Data/${att.filename}`);
+                  if (dataUrl) {
+                    const hasFlower = /💐|花束|永生花|鮮花/.test(rng.text);
+                    const hasCake = /🎂|蛋糕尺寸|圖款/.test(rng.text);
+                    let category = 'cake';
+                    if (hasFlower && (!hasCake || att.charOffset < splitBoundary)) {
+                      category = 'flower';
+                    }
+                    chunkImgs.push({ dataUrl, category });
+                  }
+                }
+              }
+              const ord = await buildBatchOrderObj(rng.text, i, chunkImgs);
+              batchOrders.push(ord);
+            }
+            renderBatchExtractedTray();
+            await renderBatchPreviewGrid();
+            showBatchStatus('success', `✅ 已從 ${file.name} 自動解析 ${batchOrders.length} 筆訂單、配對 ${pagesData.attachments.length} 張圖片並產生全部預覽！`);
+            return;
           }
+
+          // 若為 .docx，讀取 word/document.xml 文字並自動預視
+          const docxEntry = entries.find(e => e.name.toLowerCase() === 'word/document.xml');
+          if (docxEntry) {
+            const rawBytes = await decompressZipEntry(docxEntry);
+            if (rawBytes) {
+              const xmlStr = new TextDecoder('utf-8').decode(rawBytes);
+              const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
+              const paras = Array.from(doc.getElementsByTagName('w:p'));
+              batchRawInput.value = paras.map(p => p.textContent || '').join('\n').trim();
+            }
+          }
+
           renderBatchExtractedTray();
-          showBatchStatus('success', `✅ 已從 ${file.name} 擷取 ${batchExtractedImages.length} 張圖片${docText ? '與文字內容' : '（請於下方貼上文字後按「⚡ 解析並預視全部」）'}！`);
+          if (batchRawInput.value.trim()) {
+            await parseBatchFromTextarea();
+          } else {
+            showBatchStatus('success', `✅ 已從 ${file.name} 擷取 ${batchExtractedImages.length} 張圖片！`);
+          }
         } catch (err) {
           showBatchStatus('error', `❌ 讀取檔案失敗：${err.message}`);
+        }
+      }
+
+      btnBatchImportPages.addEventListener('click', () => batchPagesFile.click());
+      batchPagesFile.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        batchPagesFile.value = '';
+        await importBatchFile(file);
+      });
+
+      const batchDropPanel = document.getElementById('batchDropPanel');
+      batchDropPanel.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        batchDropPanel.style.borderColor = '#e11d48';
+      });
+      batchDropPanel.addEventListener('dragleave', () => {
+        batchDropPanel.style.borderColor = '';
+      });
+      batchDropPanel.addEventListener('drop', async (e) => {
+        const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+        const docFile = files.find(f => /\.(pages|docx)$/i.test(f.name || ''));
+        if (docFile) {
+          e.preventDefault();
+          batchDropPanel.style.borderColor = '';
+          await importBatchFile(docFile);
         }
       });
 
@@ -3085,29 +3458,29 @@ if (typeof module !== 'undefined' && module.exports) {
       });
 
       function splitBatchOrderTexts(raw) {
-        if (!raw || !raw.trim()) return [];
-        const normalized = raw.replace(/\r\n/g, '\n').trim();
-        if (/^\s*(?:---|===|___)+\s*$/m.test(normalized)) {
-          return normalized.split(/^\s*(?:---|===|___)+\s*$/m).map(s => s.trim()).filter(Boolean);
-        }
-        return normalized.split(/\n{3,}/).map(s => s.trim()).filter(Boolean);
+        return splitTextWithRanges(raw).map(r => r.text.trim()).filter(Boolean);
       }
 
       async function renderBatchCardItem(orderObj) {
-        const imgs = orderObj.images || [];
+        const rawImgs = orderObj.images || [];
+        const flowerImgs = rawImgs.filter(x => x.category === 'flower').map(x => x.dataUrl || x);
+        const cakeImgs = rawImgs.filter(x => x.category !== 'flower' && x.category !== 'addon').map(x => x.dataUrl || x);
+        const addonImgs = rawImgs.filter(x => x.category === 'addon').map(x => x.dataUrl || x);
+
         const items = [];
-        if (orderObj.flowerText) items.push({ type: 'flower', text: orderObj.flowerText, images: orderObj.cakeText ? [] : imgs, addonImages: [] });
-        if (orderObj.cakeText) items.push({ type: 'cake', text: orderObj.cakeText, images: imgs, addonImages: [] });
-        if (items.length === 0) items.push({ type: 'cake', text: orderObj.rawText, images: imgs, addonImages: [] });
+        if (orderObj.flowerText) items.push({ type: 'flower', text: orderObj.flowerText, images: flowerImgs, addonImages: [] });
+        if (orderObj.cakeText) items.push({ type: 'cake', text: orderObj.cakeText, images: cakeImgs, addonImages: addonImgs });
+        if (items.length === 0) items.push({ type: 'cake', text: orderObj.rawText, images: [...flowerImgs, ...cakeImgs], addonImages: addonImgs });
 
         if (window.CardRenderer && typeof window.CardRenderer.renderCard === 'function') {
           orderObj.canvas = await window.CardRenderer.renderCard(orderObj.state, {
             items,
             flowerText: orderObj.flowerText,
             cakeText: orderObj.cakeText,
-            flowerImages: orderObj.cakeText ? [] : imgs,
-            cakeImages: orderObj.cakeText ? imgs : [],
-            addonImages: []
+            flowerImages: flowerImgs,
+            cakeImages: cakeImgs,
+            addonImages: addonImgs,
+            addonImage: addonImgs[0] || null
           });
         }
       }
@@ -3115,7 +3488,7 @@ if (typeof module !== 'undefined' && module.exports) {
       async function renderBatchPreviewGrid() {
         batchPreviewList.innerHTML = '';
         batchCountHint.textContent = batchOrders.length > 0
-          ? `共解析 ${batchOrders.length} 筆訂單（可預覽小卡並個別調整改期）`
+          ? `共解析 ${batchOrders.length} 筆訂單（可預覽小卡、調整改期或圖片分類）`
           : '尚未解析訂單';
 
         for (let idx = 0; idx < batchOrders.length; idx++) {
@@ -3132,6 +3505,7 @@ if (typeof module !== 'undefined' && module.exports) {
           const actions = document.createElement('div');
           actions.style.display = 'flex';
           actions.style.gap = '6px';
+          actions.style.flexWrap = 'wrap';
 
           const btnResched = document.createElement('button');
           btnResched.type = 'button';
@@ -3155,6 +3529,19 @@ if (typeof module !== 'undefined' && module.exports) {
             renderBatchPreviewGrid();
           };
 
+          const btnDl = document.createElement('button');
+          btnDl.type = 'button';
+          btnDl.className = 'btn';
+          btnDl.style.padding = '4px 8px';
+          btnDl.style.fontSize = '12px';
+          btnDl.textContent = '💾';
+          btnDl.title = '下載這張小卡';
+          btnDl.onclick = () => {
+            if (ord.canvas && window.CardRenderer) {
+              window.CardRenderer.downloadCard(ord.canvas, ord.filename);
+            }
+          };
+
           const btnLoad = document.createElement('button');
           btnLoad.type = 'button';
           btnLoad.className = 'btn';
@@ -3164,8 +3551,16 @@ if (typeof module !== 'undefined' && module.exports) {
           btnLoad.onclick = () => {
             setNotePlainText(ord.rawText);
             parseNoteContent();
+            uploadedImages = (ord.images || []).map((imgObj, i) => ({
+              id: `${Date.now()}_${i}`,
+              dataUrl: imgObj.dataUrl || imgObj,
+              category: imgObj.category || 'cake'
+            }));
+            renderImagesList();
             if (ord.isRescheduled && !hasRescheduleNote()) {
               btnReschedule.click();
+            } else {
+              refreshCardPreview();
             }
             batchSection.classList.remove('open');
             singleModeGrid.style.display = '';
@@ -3184,6 +3579,7 @@ if (typeof module !== 'undefined' && module.exports) {
           };
 
           actions.appendChild(btnResched);
+          actions.appendChild(btnDl);
           actions.appendChild(btnLoad);
           actions.appendChild(btnDel);
           head.appendChild(title);
@@ -3192,7 +3588,50 @@ if (typeof module !== 'undefined' && module.exports) {
           const meta = document.createElement('div');
           meta.className = 'hint';
           meta.style.marginTop = '0';
-          meta.textContent = `日期：${ord.dateTag || '未指定'} ｜ 時間：${(ord.state.pickup && ord.state.pickup.time) || '未指定'} ｜ 總金額：$${extractTotalFromPricing(ord.pricingText)}`;
+          meta.textContent = `日期：${ord.dateTag || '未指定'} ｜ 時間：${(ord.state.pickup && ord.state.pickup.time) || '未指定'} ｜ 圖片：${(ord.images || []).length} 張 ｜ 總金額：$${extractTotalFromPricing(ord.pricingText)}`;
+
+          // 每張卡片內的附圖管理列（可切換 🎂/💐/🕯️ 或移除）
+          if (ord.images && ord.images.length > 0) {
+            const imgRow = document.createElement('div');
+            imgRow.className = 'images-list';
+            imgRow.style.gap = '6px';
+            ord.images.forEach((imgObj, imgIdx) => {
+              const chip = document.createElement('div');
+              chip.className = 'img-chip';
+              chip.style.padding = '3px';
+              const rm = document.createElement('button');
+              rm.type = 'button';
+              rm.className = 'img-remove';
+              rm.textContent = '×';
+              rm.onclick = async () => {
+                ord.images.splice(imgIdx, 1);
+                await renderBatchCardItem(ord);
+                renderBatchPreviewGrid();
+              };
+              const th = document.createElement('img');
+              th.src = imgObj.dataUrl || imgObj;
+              th.style.width = '46px';
+              th.style.height = '46px';
+              const sel = document.createElement('select');
+              sel.innerHTML = '<option value="cake">🎂</option><option value="flower">💐</option><option value="addon">🕯️</option>';
+              sel.value = imgObj.category || 'cake';
+              sel.onchange = async () => {
+                imgObj.category = sel.value;
+                await renderBatchCardItem(ord);
+                renderBatchPreviewGrid();
+              };
+              chip.appendChild(rm);
+              chip.appendChild(th);
+              chip.appendChild(sel);
+              imgRow.appendChild(chip);
+            });
+            card.appendChild(head);
+            card.appendChild(meta);
+            card.appendChild(imgRow);
+          } else {
+            card.appendChild(head);
+            card.appendChild(meta);
+          }
 
           const preview = document.createElement('div');
           preview.className = 'batch-card-preview';
@@ -3204,14 +3643,12 @@ if (typeof module !== 'undefined' && module.exports) {
             preview.innerHTML = '<span class="hint">無法產生預覽</span>';
           }
 
-          card.appendChild(head);
-          card.appendChild(meta);
           card.appendChild(preview);
           batchPreviewList.appendChild(card);
         }
       }
 
-      btnBatchParse.addEventListener('click', async () => {
+      async function parseBatchFromTextarea() {
         const chunks = splitBatchOrderTexts(batchRawInput.value);
         if (chunks.length === 0) {
           showBatchStatus('warn', '⚠️ 請先貼上至少一筆訂單內容！');
@@ -3219,41 +3656,25 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         batchOrders = [];
         for (let i = 0; i < chunks.length; i++) {
-          const text = chunks[i];
-          const st = (window.Extractor && typeof window.Extractor.parseOrderText === 'function')
-            ? window.Extractor.parseOrderText(text)
-            : { orderType: 'cake', pickup: {}, cake: {}, flower: {}, customer: {} };
-          let cakeText = '';
-          let flowerText = '';
-          if (window.Extractor && typeof window.Extractor.splitOrderText === 'function') {
-            const sp = window.Extractor.splitOrderText(text);
-            cakeText = (sp.cakeText && sp.cakeText !== '無') ? sp.cakeText : '';
-            flowerText = (sp.flowerText && sp.flowerText !== '無') ? sp.flowerText : '';
-          }
-          const dateVal = (st.pickup && st.pickup.date) || '';
-          const dateTag = (st.pickup && st.pickup.dateTag) || inferDateTag(dateVal);
-          const lineName = ((st.customer && (st.customer.lineName || st.customer.name)) || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
-          const filename = buildCardFilename(dateTag, (st.pickup && st.pickup.time) || '', lineName);
-          const isRescheduled = /這位客人已改過期/.test(text);
-
-          const ord = {
-            id: `${Date.now()}_${i}`,
-            rawText: text,
-            state: st,
-            cakeText,
-            flowerText,
-            pricingText: extractPricingFromText(text),
-            dateTag,
-            filename,
-            canvas: null,
-            isRescheduled,
-            images: []
-          };
-          await renderBatchCardItem(ord);
+          const ord = await buildBatchOrderObj(chunks[i], i, []);
           batchOrders.push(ord);
         }
         await renderBatchPreviewGrid();
         showBatchStatus('info', `⚡ 已解析 ${batchOrders.length} 筆訂單，請先預覽下方小卡確認無誤再送出！`);
+      }
+
+      btnBatchParse.addEventListener('click', parseBatchFromTextarea);
+
+      document.getElementById('btnBatchDownloadAll').addEventListener('click', () => {
+        if (batchOrders.length === 0) {
+          showBatchStatus('warn', '⚠️ 目前沒有可下載的小卡，請先匯入或解析訂單！');
+          return;
+        }
+        batchOrders.forEach((ord) => {
+          if (ord.canvas && window.CardRenderer) {
+            window.CardRenderer.downloadCard(ord.canvas, ord.filename);
+          }
+        });
       });
 
       btnBatchClear.addEventListener('click', () => {
