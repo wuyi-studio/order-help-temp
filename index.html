@@ -1288,6 +1288,17 @@ const CardRenderer = {
     // 預先測量總高度並規劃圖文排列
     let totalH = 40; // 頂部留白
     const plan = [];
+    const pushImagesPlan = (imgs) => {
+      if (imgs.length === 1) {
+        const singleSize = this._fitImageSize(imgs[0], Math.min(contentW, 320), 320);
+        plan.push({ type: 'images', images: imgs, singleSize, height: singleSize.h + 18 });
+        totalH += singleSize.h + 18;
+      } else {
+        const imgH = imgs.length >= 3 ? 150 : 190;
+        plan.push({ type: 'images', images: imgs, height: imgH + 18 });
+        totalH += imgH + 18;
+      }
+    };
 
     const activeItems = items.filter(it => (it.text && it.text !== '無') || (it.images && it.images.length > 0) || (it.addonImages && it.addonImages.length > 0));
 
@@ -1335,9 +1346,7 @@ const CardRenderer = {
           totalH += lineHeight + 6;
 
           if (allImgs.length > 0 && !placedImages) {
-            const imgH = allImgs.length > 1 ? 190 : 230;
-            plan.push({ type: 'images', images: allImgs, height: imgH + 18 });
-            totalH += imgH + 18;
+            pushImagesPlan(allImgs);
             placedImages = true;
           }
           continue;
@@ -1350,17 +1359,13 @@ const CardRenderer = {
           hasHeader = true;
 
           if (allImgs.length > 0 && !placedImages) {
-            const imgH = allImgs.length > 1 ? 190 : 230;
-            plan.push({ type: 'images', images: allImgs, height: imgH + 18 });
-            totalH += imgH + 18;
+            pushImagesPlan(allImgs);
             placedImages = true;
           }
         }
 
         if (allImgs.length > 0 && !placedImages) {
-          const imgH = allImgs.length > 1 ? 190 : 230;
-          plan.push({ type: 'images', images: allImgs, height: imgH + 18 });
-          totalH += imgH + 18;
+          pushImagesPlan(allImgs);
           placedImages = true;
         }
 
@@ -1387,9 +1392,7 @@ const CardRenderer = {
           plan.push({ type: 'section_header', text: defaultHeader, height: lineHeight + 6 });
           totalH += lineHeight + 6;
         }
-        const imgH = allImgs.length > 1 ? 190 : 230;
-        plan.push({ type: 'images', images: allImgs, height: imgH + 18 });
-        totalH += imgH + 18;
+        pushImagesPlan(allImgs);
       }
     });
 
@@ -1457,13 +1460,13 @@ const CardRenderer = {
         continue;
       }
 
-      // 圖片繪製 (截圖圖框對應圖片：單圖、雙圖並排或多圖網格)
+      // 圖片繪製 (截圖圖框對應圖片：單圖維持原始比例不裁切、雙圖並排或多圖網格)
       if (item.type === 'images') {
         const imgs = item.images;
         if (imgs.length === 1) {
-          // 單張大圖
-          const imgW = 230;
-          const imgH = 230;
+          // 單張大圖：依原圖比例繪製，完整呈現不裁切
+          const imgW = (item.singleSize && item.singleSize.w) || 230;
+          const imgH = (item.singleSize && item.singleSize.h) || 230;
           this._drawPhoto(ctx, imgs[0], paddingX, curY, imgW, imgH);
           curY += item.height;
         } else if (imgs.length === 2) {
@@ -1598,7 +1601,21 @@ const CardRenderer = {
   },
 
   /**
-   * 繪製圓角照片
+   * 依原圖比例計算不裁切的顯示尺寸
+   */
+  _fitImageSize(img, maxW, maxH) {
+    const nw = (img && (img.naturalWidth || img.width)) || maxW;
+    const nh = (img && (img.naturalHeight || img.height)) || maxH;
+    if (!nw || !nh) return { w: maxW, h: maxH };
+    const ratio = Math.min(maxW / nw, maxH / nh);
+    return {
+      w: Math.max(1, Math.round(nw * ratio)),
+      h: Math.max(1, Math.round(nh * ratio))
+    };
+  },
+
+  /**
+   * 繪製圓角照片（完整等比縮放，不裁切原圖）
    */
   _drawPhoto(ctx, img, x, y, w, h) {
     if (!img) return;
@@ -1621,23 +1638,19 @@ const CardRenderer = {
     ctx.closePath();
     ctx.clip();
 
-    // 依比例裁切填滿 (object-fit: cover)
-    const imgRatio = img.naturalWidth / img.naturalHeight;
-    const boxRatio = w / h;
-    let sW = img.naturalWidth;
-    let sH = img.naturalHeight;
-    let sX = 0;
-    let sY = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, w, h);
 
-    if (imgRatio > boxRatio) {
-      sW = img.naturalHeight * boxRatio;
-      sX = (img.naturalWidth - sW) / 2;
-    } else {
-      sH = img.naturalWidth / boxRatio;
-      sY = (img.naturalHeight - sH) / 2;
-    }
+    // 依原始比例完整縮放 (object-fit: contain)，不裁切任何邊緣
+    const nw = img.naturalWidth || img.width || w;
+    const nh = img.naturalHeight || img.height || h;
+    const scale = Math.min(w / nw, h / nh);
+    const drawW = nw * scale;
+    const drawH = nh * scale;
+    const drawX = x + (w - drawW) / 2;
+    const drawY = y + (h - drawH) / 2;
 
-    ctx.drawImage(img, sX, sY, sW, sH, x, y, w, h);
+    ctx.drawImage(img, 0, 0, nw, nh, drawX, drawY, drawW, drawH);
     ctx.restore();
 
     // 細微邊框
