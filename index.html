@@ -803,7 +803,7 @@ const Extractor = {
 
     const lines = cleanText.split('\n');
 
-    const hasFlowerKeyword = /花束|精緻包裝花束|透包花束|透明包裝花束|鮮花色系|花材色系|鮮花預算/.test(cleanText);
+    const hasFlowerKeyword = /花束|精緻包裝花束|透包花束|透明包裝花束|永生花|玫瑰永生花|🌹|鮮花色系|花材色系|鮮花預算/.test(cleanText);
     const hasCakeKeyword = /蛋糕尺寸|蛋糕口味|題字|圖款|漢堡盒|托盤寫|蛋糕體|原味戚風|伯爵戚風|可可戚風/.test(cleanText);
 
     // 情況 1: 沒有花束，純蛋糕 (包含雙蛋糕等)
@@ -822,30 +822,37 @@ const Extractor = {
       };
     }
 
-    // 情況 3: 同時包含花束與蛋糕 (如 1️⃣ 花束、2️⃣ 蛋糕)
-    let cakeStartIdx = -1;
+    // 情況 3: 同時包含花束與蛋糕 (支援 1️⃣ 花束 2️⃣ 蛋糕，或 1️⃣ 蛋糕 2️⃣ 花束)
+    let secondStartIdx = -1;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (/^2️⃣/.test(line)) {
-        cakeStartIdx = i;
+        secondStartIdx = i;
         break;
       }
       if (/^(圖款|愛心造型|蛋糕體|蛋糕尺寸|托盤寫|托盤題字|英文題字|中文題字|題字)[：:\s]/.test(line) && i > 0) {
-        cakeStartIdx = i;
+        secondStartIdx = i;
         break;
       }
     }
 
-    if (cakeStartIdx > 0) {
-      const flowerLines = lines.slice(0, cakeStartIdx).map(l => l.trimEnd());
-      const cakeLines = lines.slice(cakeStartIdx).map(l => l.trimEnd());
+    if (secondStartIdx > 0) {
+      const firstPart = lines.slice(0, secondStartIdx).map(l => l.trimEnd()).join('\n').trim();
+      const secondPart = lines.slice(secondStartIdx).map(l => l.trimEnd()).join('\n').trim();
 
-      const flowerPart = flowerLines.join('\n').trim();
-      const cakePart = cakeLines.join('\n').trim();
+      const firstIsFlower = /花束|精緻包裝花束|透包花束|透明包裝花束|永生花|玫瑰永生花|🌹|鮮花色系|花材色系|鮮花預算/.test(firstPart);
+      const secondIsFlower = /花束|精緻包裝花束|透包花束|透明包裝花束|永生花|玫瑰永生花|🌹|鮮花色系|花材色系|鮮花預算/.test(secondPart);
+
+      if (!firstIsFlower && secondIsFlower) {
+        return {
+          flowerText: secondPart || '無',
+          cakeText: firstPart || '無'
+        };
+      }
 
       return {
-        flowerText: flowerPart || '無',
-        cakeText: cakePart || '無'
+        flowerText: firstPart || '無',
+        cakeText: secondPart || '無'
       };
     }
 
@@ -871,7 +878,7 @@ const Extractor = {
     const lines = normalizedText.split('\n');
 
     // 判斷訂單類型
-    const hasFlowerHeader = /花束|精緻包裝花束|透包花束|透明包裝花束|鮮花色系|花材色系/.test(normalizedText);
+    const hasFlowerHeader = /花束|精緻包裝花束|透包花束|透明包裝花束|永生花|玫瑰永生花|🌹|鮮花色系|花材色系/.test(normalizedText);
     const hasCakeHeader = /蛋糕尺寸|蛋糕口味|題字|圖款|漢堡盒|托盤寫/.test(normalizedText);
 
     let orderType = 'cake';
@@ -1428,10 +1435,31 @@ const CardRenderer = {
         }
 
         // 序號或標題列
-        if (/^[1-9🔟]️⃣/.test(trimmed) || (isFlower && /💐.*花束.*💐|花束/.test(trimmed) && !/色系|預算|襯紙|提袋/.test(trimmed)) || (!isFlower && /^(🎂|客製化蛋糕|蛋糕款)/.test(trimmed))) {
-          hasHeader = true;
+        const startsWithNum = /^[1-9🔟]️⃣/.test(trimmed);
+        const isFlowerTitle = isFlower && /(?:💐.*花束|🌹|永生花|花束)/.test(trimmed) && !/色系|預算|襯紙|提袋/.test(trimmed);
+        const isCakeTitle = !isFlower && /^(🎂|客製化蛋糕|蛋糕款)/.test(trimmed);
+
+        if (startsWithNum || (!hasHeader && (isFlowerTitle || isCakeTitle))) {
           const cleanTitle = trimmed.replace(/^[1-9🔟]️⃣\s*/, '').trim();
-          const headerText = `${numEmoji} ${cleanTitle}`;
+          // 若這一行只有孤立序號 (例: "1️⃣") 且下一行是標題 (例: "💐透明包裝花束💐")，略過孤立序號避免重複兩行 1️⃣
+          if (!cleanTitle) {
+            let nextLine = '';
+            for (let j = i + 1; j < lines.length; j++) {
+              if (lines[j].trim()) {
+                nextLine = lines[j].trim();
+                break;
+              }
+            }
+            const nextIsFlowerTitle = isFlower && /(?:💐.*花束|🌹|永生花|花束)/.test(nextLine) && !/色系|預算|襯紙|提袋/.test(nextLine);
+            const nextIsCakeTitle = !isFlower && /^(🎂|客製化蛋糕|蛋糕款)/.test(nextLine);
+            if (nextIsFlowerTitle || nextIsCakeTitle) {
+              continue;
+            }
+          }
+          const matchedNum = (trimmed.match(/^([1-9🔟]️⃣)/) || [])[1];
+          const badge = (hasHeader && matchedNum) ? matchedNum : numEmoji;
+          hasHeader = true;
+          const headerText = cleanTitle ? `${badge} ${cleanTitle}` : `${badge} ${isFlower ? '💐精緻包裝花束' : '🎂客製化蛋糕'}`;
           plan.push({ type: 'section_header', text: headerText, height: lineHeight + 6 });
           totalH += lineHeight + 6;
 
@@ -3159,24 +3187,33 @@ if (typeof module !== 'undefined' && module.exports) {
           }
         }
 
-        // 2. 找出主文字儲存體 (mtype === 2001 且含最長文字或取貨/蛋糕字樣)
-        let bestText = '';
-        let bestMsgData = null;
+        // 2. 找出主文字儲存體與其他含訂單關鍵字的文字方塊 (mtype === 2001)
+        const textStorages = [];
         for (const body of docArchives.values()) {
           for (const msg of body) {
             if (msg.mtype !== 2001) continue;
             for (const f of parsePbFields(msg.data)) {
               if (f.fn === 3 && f.wt === 2) {
                 const candidate = decoder.decode(f.val);
-                if (candidate.length > bestText.length) {
-                  bestText = candidate;
-                  bestMsgData = msg.data;
+                if (candidate.trim()) {
+                  textStorages.push({ text: candidate, msgData: msg.data });
                 }
               }
             }
           }
         }
-        if (!bestText || !bestMsgData) return null;
+        if (textStorages.length === 0) return null;
+        textStorages.sort((a, b) => b.text.length - a.text.length);
+        const mainStorage = textStorages[0];
+        let bestText = mainStorage.text;
+        const extraTexts = textStorages
+          .slice(1)
+          .filter(s => /取貨|蛋糕|花束|永生花|訂購人/.test(s.text) && !bestText.includes(s.text.trim()))
+          .map(s => s.text.trim());
+        if (extraTexts.length > 0) {
+          bestText = `${bestText}\n\n\n\n\n\n${extraTexts.join('\n\n\n\n\n\n')}`;
+        }
+        const bestMsgData = mainStorage.msgData;
 
         // 3. 解析每個 \uFFFC 在文字中的字元偏移量與對應圖片檔案
         const attachments = []; // { charOffset, filename }
@@ -3330,7 +3367,19 @@ if (typeof module !== 'undefined' && module.exports) {
         if (tail.replace(/[\uFFFC\s\u00a0,，＝=—\-_]/g, '').length > 0) {
           ranges.push({ start: last, end: normalized.length, text: tail });
         }
-        return ranges;
+        // 合併因單筆訂單內誤按 5 行以上空白而被誤拆的片段
+        const merged = [];
+        const hasOrderEndOrHeader = (t) => /(?:取貨日期|自取日期|訂購人|總共)/.test(t);
+        for (const r of ranges) {
+          if (merged.length > 0 && !hasOrderEndOrHeader(merged[merged.length - 1].text) && !hasOrderEndOrHeader(r.text)) {
+            const prev = merged[merged.length - 1];
+            prev.end = r.end;
+            prev.text = normalized.slice(prev.start, prev.end);
+          } else {
+            merged.push(r);
+          }
+        }
+        return merged;
       }
 
       async function importBatchFile(file) {
@@ -3379,7 +3428,7 @@ if (typeof module !== 'undefined' && module.exports) {
                 if (att.charOffset >= rng.start && att.charOffset <= rng.end) {
                   const dataUrl = entryDataUrlMap.get(att.filename) || entryDataUrlMap.get(`Data/${att.filename}`);
                   if (dataUrl) {
-                    const hasFlower = /💐|花束|永生花|鮮花/.test(rng.text);
+                    const hasFlower = /💐|🌹|花束|永生花|鮮花/.test(rng.text);
                     const hasCake = /🎂|蛋糕尺寸|圖款/.test(rng.text);
                     let category = 'cake';
                     if (hasFlower && (!hasCake || att.charOffset < splitBoundary)) {
@@ -3485,7 +3534,75 @@ if (typeof module !== 'undefined' && module.exports) {
         }
       }
 
+      function dedupeBatchFilenames() {
+        const seen = new Map();
+        for (const ord of batchOrders) {
+          const base = (ord.baseFilename || ord.filename || '客戶.png').replace(/\.png$/i, '');
+          const count = (seen.get(base) || 0) + 1;
+          seen.set(base, count);
+          ord.baseFilename = `${base}.png`;
+          if (count > 1) {
+            ord.filename = `${base} (${count}).png`;
+            ord.isDuplicateName = true;
+          } else {
+            ord.filename = `${base}.png`;
+            ord.isDuplicateName = false;
+          }
+        }
+      }
+
+      async function sendBatchSingleOrder(ord, webhookUrl) {
+        if (!ord.canvas) await renderBatchCardItem(ord);
+        const st = ord.state || {};
+        const hasFlowerText = Boolean(ord.flowerText);
+        const lineNameVal = ((st.customer && (st.customer.lineName || st.customer.name)) || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+        const sheetsPayload = {
+          pickupDate: ord.dateTag || (st.pickup && st.pickup.date) || '',
+          dateTag: ord.dateTag,
+          pickupTime: (st.pickup && st.pickup.time) || '',
+          location: (st.pickup && st.pickup.location) || '',
+          customerName: (st.customer && st.customer.name) || '',
+          customerPhone: (st.customer && st.customer.phone) || '',
+          lineName: (st.customer && st.customer.lineName) || '',
+          orderType: st.orderType || 'cake',
+          cakeSize: (st.cake && st.cake.size) || '',
+          cakeFlavor: (st.cake && st.cake.flavor) || '',
+          cakeInscription: (st.cake && st.cake.inscription) || '',
+          addon: (st.cake && st.cake.addon) || '',
+          flowerBudget: hasFlowerText ? ((st.flower && st.flower.budget) || '') : '',
+          flowerColor: hasFlowerText ? ((st.flower && st.flower.color) || '') : '',
+          flowerPaper: hasFlowerText ? ((st.flower && st.flower.paper) || '') : '',
+          totalPrice: extractTotalFromPricing(ord.pricingText),
+          cakeText: ord.cakeText,
+          flowerText: ord.flowerText,
+          pricingText: ord.pricingText,
+          filename: ord.filename,
+          reviewStatus: '⏳ 待複查',
+          nikkiChecked: false,
+          isRescheduled: ord.isRescheduled,
+          rescheduleNote: ord.isRescheduled ? '這位客人已改過期' : '',
+          rawText: ord.rawText
+        };
+        const drivePayload = {
+          action: 'uploadCardToDrive',
+          folderId: DRIVE_FOLDER_ID,
+          filename: ord.filename,
+          pickupDate: (st.pickup && st.pickup.date) || ord.dateTag,
+          dateTag: ord.dateTag,
+          lineName: lineNameVal,
+          preserveExistingIfNoPhoto: !ord.images || ord.images.length === 0,
+          base64Image: ord.canvas.toDataURL('image/png')
+        };
+        await Promise.all([
+          postToGas(webhookUrl, sheetsPayload),
+          postToGas(webhookUrl, drivePayload)
+        ]);
+        ord.sendStatus = 'ok';
+        ord.sendError = '';
+      }
+
       async function renderBatchPreviewGrid() {
+        dedupeBatchFilenames();
         batchPreviewList.innerHTML = '';
         batchCountHint.textContent = batchOrders.length > 0
           ? `共解析 ${batchOrders.length} 筆訂單（可預覽小卡、調整改期或圖片分類）`
@@ -3495,6 +3612,12 @@ if (typeof module !== 'undefined' && module.exports) {
           const ord = batchOrders[idx];
           const card = document.createElement('div');
           card.className = 'batch-card';
+          if (ord.sendStatus === 'error') {
+            card.style.borderColor = '#ef4444';
+            card.style.background = '#fef2f2';
+          } else if (ord.sendStatus === 'ok') {
+            card.style.borderColor = '#22c55e';
+          }
 
           const head = document.createElement('div');
           head.className = 'batch-card-head';
@@ -3578,6 +3701,31 @@ if (typeof module !== 'undefined' && module.exports) {
             renderBatchPreviewGrid();
           };
 
+          if (ord.sendStatus === 'error') {
+            const btnRetry = document.createElement('button');
+            btnRetry.type = 'button';
+            btnRetry.className = 'btn';
+            btnRetry.style.padding = '4px 8px';
+            btnRetry.style.fontSize = '12px';
+            btnRetry.style.borderColor = '#ef4444';
+            btnRetry.style.color = '#b91c1c';
+            btnRetry.textContent = '🔁 重送';
+            btnRetry.onclick = async () => {
+              const webhookUrl = getWebhookUrl();
+              if (!webhookUrl) return;
+              btnRetry.disabled = true;
+              try {
+                await sendBatchSingleOrder(ord, webhookUrl);
+                showBatchStatus('success', `✅ 第 #${idx + 1} 筆（${ord.filename}）重送成功！`);
+              } catch (err) {
+                ord.sendStatus = 'error';
+                ord.sendError = err.message || '送出失敗';
+                showBatchStatus('error', `❌ 第 #${idx + 1} 筆重送失敗：${ord.sendError}`);
+              }
+              renderBatchPreviewGrid();
+            };
+            actions.appendChild(btnRetry);
+          }
           actions.appendChild(btnResched);
           actions.appendChild(btnDl);
           actions.appendChild(btnLoad);
@@ -3588,7 +3736,12 @@ if (typeof module !== 'undefined' && module.exports) {
           const meta = document.createElement('div');
           meta.className = 'hint';
           meta.style.marginTop = '0';
-          meta.textContent = `日期：${ord.dateTag || '未指定'} ｜ 時間：${(ord.state.pickup && ord.state.pickup.time) || '未指定'} ｜ 圖片：${(ord.images || []).length} 張 ｜ 總金額：$${extractTotalFromPricing(ord.pricingText)}`;
+          const extraFlags = [
+            ord.isDuplicateName ? '⚠️ 同名同時間（已自動編號防覆蓋）' : '',
+            ord.sendStatus === 'ok' ? '✅ 已送出' : '',
+            ord.sendStatus === 'error' ? `❌ 失敗：${ord.sendError || '請檢查網路或網址'}` : ''
+          ].filter(Boolean).join(' ｜ ');
+          meta.textContent = `日期：${ord.dateTag || '未指定'} ｜ 時間：${(ord.state.pickup && ord.state.pickup.time) || '未指定'} ｜ 圖片：${(ord.images || []).length} 張 ｜ 總金額：$${extractTotalFromPricing(ord.pricingText)}${extraFlags ? ' ｜ ' + extraFlags : ''}`;
 
           // 每張卡片內的附圖管理列（可切換 🎂/💐/🕯️ 或移除）
           if (ord.images && ord.images.length > 0) {
@@ -3706,61 +3859,20 @@ if (typeof module !== 'undefined' && module.exports) {
           const ord = batchOrders[i];
           showBatchStatus('info', `⏳ 正在送出第 ${i + 1} / ${batchOrders.length} 筆（${ord.filename}）...`);
           try {
-            if (!ord.canvas) await renderBatchCardItem(ord);
-            const st = ord.state || {};
-            const hasFlowerText = Boolean(ord.flowerText);
-            const lineNameVal = ((st.customer && (st.customer.lineName || st.customer.name)) || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
-            const sheetsPayload = {
-              pickupDate: ord.dateTag || (st.pickup && st.pickup.date) || '',
-              dateTag: ord.dateTag,
-              pickupTime: (st.pickup && st.pickup.time) || '',
-              location: (st.pickup && st.pickup.location) || '',
-              customerName: (st.customer && st.customer.name) || '',
-              customerPhone: (st.customer && st.customer.phone) || '',
-              lineName: (st.customer && st.customer.lineName) || '',
-              orderType: st.orderType || 'cake',
-              cakeSize: (st.cake && st.cake.size) || '',
-              cakeFlavor: (st.cake && st.cake.flavor) || '',
-              cakeInscription: (st.cake && st.cake.inscription) || '',
-              addon: (st.cake && st.cake.addon) || '',
-              flowerBudget: hasFlowerText ? ((st.flower && st.flower.budget) || '') : '',
-              flowerColor: hasFlowerText ? ((st.flower && st.flower.color) || '') : '',
-              flowerPaper: hasFlowerText ? ((st.flower && st.flower.paper) || '') : '',
-              totalPrice: extractTotalFromPricing(ord.pricingText),
-              cakeText: ord.cakeText,
-              flowerText: ord.flowerText,
-              pricingText: ord.pricingText,
-              filename: ord.filename,
-              reviewStatus: '⏳ 待複查',
-              nikkiChecked: false,
-              isRescheduled: ord.isRescheduled,
-              rescheduleNote: ord.isRescheduled ? '這位客人已改過期' : '',
-              rawText: ord.rawText
-            };
-            const drivePayload = {
-              action: 'uploadCardToDrive',
-              folderId: DRIVE_FOLDER_ID,
-              filename: ord.filename,
-              pickupDate: (st.pickup && st.pickup.date) || ord.dateTag,
-              dateTag: ord.dateTag,
-              lineName: lineNameVal,
-              preserveExistingIfNoPhoto: !ord.images || ord.images.length === 0,
-              base64Image: ord.canvas.toDataURL('image/png')
-            };
-            await Promise.all([
-              postToGas(webhookUrl, sheetsPayload),
-              postToGas(webhookUrl, drivePayload)
-            ]);
+            await sendBatchSingleOrder(ord, webhookUrl);
             okCount++;
-          } catch (_) {
+          } catch (err) {
+            ord.sendStatus = 'error';
+            ord.sendError = err.message || '送出失敗';
             failCount++;
           }
         }
 
         btnBatchSendAll.disabled = false;
+        await renderBatchPreviewGrid();
         showBatchStatus(
           failCount === 0 ? 'success' : 'warn',
-          `📦 批次送出完成：✅ 成功 ${okCount} 筆${failCount > 0 ? `、❌ 失敗 ${failCount} 筆` : ''}！`
+          `📦 批次送出完成：✅ 成功 ${okCount} 筆${failCount > 0 ? `、❌ 失敗 ${failCount} 筆（失敗卡片已標紅框，可點「🔁 重送」單獨重送）` : ''}！`
         );
       });
     })();
