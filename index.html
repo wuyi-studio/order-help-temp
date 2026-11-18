@@ -395,6 +395,56 @@
     }
 
     .settings-drawer.open { display: block; }
+
+    .batch-section {
+      display: none;
+    }
+
+    .batch-section.open {
+      display: block;
+    }
+
+    .batch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .batch-card {
+      background: #ffffff;
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+    }
+
+    .batch-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .batch-card-preview {
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 10px;
+      text-align: center;
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    .batch-card-preview img {
+      max-width: 100%;
+      border-radius: 6px;
+    }
   </style>
 </head>
 <body>
@@ -408,11 +458,13 @@
         </div>
       </div>
       <div class="header-actions">
+        <button type="button" class="btn btn-soft" id="btnToggleBatch">📦 批次輸入</button>
         <button type="button" class="btn btn-soft" id="btnReadClipboard">📋 讀取剪貼簿</button>
         <button type="button" class="btn" id="btnToggleSettings">⚙️ 網址設定</button>
-        <button type="button" class="btn" id="btnClearAll">🗑️ 清空</button>
       </div>
     </div>
+
+    <button type="button" class="btn" id="btnClearAll" style="width: 100%; justify-content: center; margin-bottom: 14px; padding: 10px 14px;">🗑️ 清空</button>
 
     <div class="settings-drawer" id="settingsDrawer">
       <div class="field">
@@ -424,7 +476,28 @@
       </div>
     </div>
 
-    <div class="grid">
+    <div class="batch-section" id="batchSection">
+      <div class="panel">
+        <div class="panel-title">
+          <span>📦 批次輸入多筆訂單（先預視所有小卡，再一次送出）</span>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-soft" id="btnBatchParse">⚡ 解析並預視全部</button>
+            <button type="button" class="btn" id="btnBatchClear">🗑️ 清空批次</button>
+          </div>
+        </div>
+        <textarea id="batchRawInput" rows="8" placeholder="請一次貼上多筆訂單內容！&#10;&#10;💡 分隔方式：&#10;1. 每筆訂單之間用 --- 或 === 隔開，或留兩行以上空白&#10;2. 貼上後點「⚡ 解析並預視全部」，下方會列出每筆小卡預覽，可個別標記「🔄 改期」或載入單筆編輯！"></textarea>
+        <div style="display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap;">
+          <button type="button" class="btn btn-primary" id="btnBatchSendAll" style="width: auto; padding: 11px 20px;">
+            🚀 全部送出至 Google Drive ＋ 試算表
+          </button>
+          <span class="hint" id="batchCountHint" style="margin-top: 0;">尚未解析訂單</span>
+        </div>
+        <div class="status-box" id="batchStatusBox"></div>
+        <div class="batch-grid" id="batchPreviewList"></div>
+      </div>
+    </div>
+
+    <div class="grid" id="singleModeGrid">
       <!-- 左欄：貼上記事本內容與解析欄位 -->
       <div class="panel">
         <div class="panel-title">
@@ -1293,10 +1366,16 @@ const CardRenderer = {
         const singleSize = this._fitImageSize(imgs[0], Math.min(contentW, 320), 320);
         plan.push({ type: 'images', images: imgs, singleSize, height: singleSize.h + 18 });
         totalH += singleSize.h + 18;
-      } else {
-        const imgH = imgs.length >= 3 ? 150 : 190;
+      } else if (imgs.length === 2) {
+        const imgH = 220;
         plan.push({ type: 'images', images: imgs, height: imgH + 18 });
         totalH += imgH + 18;
+      } else {
+        const imgH = 150;
+        const rows = Math.ceil(imgs.length / 3);
+        const blockH = rows * imgH + (rows - 1) * 10 + 18;
+        plan.push({ type: 'images', images: imgs, height: blockH });
+        totalH += blockH;
       }
     };
 
@@ -1471,19 +1550,21 @@ const CardRenderer = {
           curY += item.height;
         } else if (imgs.length === 2) {
           // 兩張圖並排 (如圖 1 中的蛋糕圖與蠟燭圖)
-          const imgW = 190;
-          const imgH = 190;
+          const imgW = 220;
+          const imgH = 220;
           const gap = 12;
           this._drawPhoto(ctx, imgs[0], paddingX, curY, imgW, imgH);
           this._drawPhoto(ctx, imgs[1], paddingX + imgW + gap, curY, imgW, imgH);
           curY += item.height;
         } else if (imgs.length >= 3) {
-          // 三張或多張圖
+          // 三張或多張圖：每排最多 3 張自動換行，避免超出畫布右邊界
           const imgW = 150;
           const imgH = 150;
           const gap = 10;
           imgs.forEach((img, idx) => {
-            this._drawPhoto(ctx, img, paddingX + idx * (imgW + gap), curY, imgW, imgH);
+            const col = idx % 3;
+            const row = Math.floor(idx / 3);
+            this._drawPhoto(ctx, img, paddingX + col * (imgW + gap), curY + row * (imgH + gap), imgW, imgH);
           });
           curY += item.height;
         }
@@ -2249,6 +2330,7 @@ if (typeof module !== 'undefined' && module.exports) {
       function parseNoteContent() {
         const raw = getNotePlainText();
         if (!raw) return;
+        const wasRescheduled = hasRescheduleNote();
         const text = raw.replace(/\uFFFC/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
         if (window.Extractor && typeof window.Extractor.parseOrderText === 'function') {
@@ -2276,6 +2358,11 @@ if (typeof module !== 'undefined' && module.exports) {
         fieldCakeText.value = cakeTxt;
         fieldFlowerText.value = flowerTxt;
         fieldPricingText.value = extractPricingFromText(text);
+
+        if (wasRescheduled && !hasRescheduleNote()) {
+          const target = (fieldCakeText.value.trim() || !fieldFlowerText.value.trim()) ? fieldCakeText : fieldFlowerText;
+          target.value = target.value.trim() ? `${target.value.trim()}\n${RESCHEDULE_NOTE}` : RESCHEDULE_NOTE;
+        }
 
         syncRescheduleButton();
         refreshCardPreview();
@@ -2822,6 +2909,285 @@ if (typeof module !== 'undefined' && module.exports) {
         } finally {
           btnSendAll.disabled = false;
         }
+      });
+
+      // ==================== 批次輸入與預視 ====================
+      const btnToggleBatch = document.getElementById('btnToggleBatch');
+      const batchSection = document.getElementById('batchSection');
+      const singleModeGrid = document.getElementById('singleModeGrid');
+      const batchRawInput = document.getElementById('batchRawInput');
+      const batchPreviewList = document.getElementById('batchPreviewList');
+      const batchCountHint = document.getElementById('batchCountHint');
+      const batchStatusBox = document.getElementById('batchStatusBox');
+      const btnBatchParse = document.getElementById('btnBatchParse');
+      const btnBatchClear = document.getElementById('btnBatchClear');
+      const btnBatchSendAll = document.getElementById('btnBatchSendAll');
+
+      let batchOrders = []; // [{ id, rawText, state, cakeText, flowerText, pricingText, dateTag, filename, canvas, isRescheduled }]
+
+      function showBatchStatus(type, html) {
+        batchStatusBox.className = `status-box show ${type}`;
+        batchStatusBox.innerHTML = html;
+      }
+
+      btnToggleBatch.addEventListener('click', () => {
+        const isBatch = batchSection.classList.toggle('open');
+        singleModeGrid.style.display = isBatch ? 'none' : '';
+        btnToggleBatch.textContent = isBatch ? '📝 返回單筆模式' : '📦 批次輸入';
+      });
+
+      function splitBatchOrderTexts(raw) {
+        if (!raw || !raw.trim()) return [];
+        const normalized = raw.replace(/\r\n/g, '\n').trim();
+        if (/^\s*(?:---|===|___)+\s*$/m.test(normalized)) {
+          return normalized.split(/^\s*(?:---|===|___)+\s*$/m).map(s => s.trim()).filter(Boolean);
+        }
+        return normalized.split(/\n{3,}/).map(s => s.trim()).filter(Boolean);
+      }
+
+      async function renderBatchCardItem(orderObj) {
+        const items = [];
+        if (orderObj.flowerText) items.push({ type: 'flower', text: orderObj.flowerText, images: [], addonImages: [] });
+        if (orderObj.cakeText) items.push({ type: 'cake', text: orderObj.cakeText, images: [], addonImages: [] });
+        if (items.length === 0) items.push({ type: 'cake', text: orderObj.rawText, images: [], addonImages: [] });
+
+        if (window.CardRenderer && typeof window.CardRenderer.renderCard === 'function') {
+          orderObj.canvas = await window.CardRenderer.renderCard(orderObj.state, {
+            items,
+            flowerText: orderObj.flowerText,
+            cakeText: orderObj.cakeText,
+            flowerImages: [],
+            cakeImages: [],
+            addonImages: []
+          });
+        }
+      }
+
+      async function renderBatchPreviewGrid() {
+        batchPreviewList.innerHTML = '';
+        batchCountHint.textContent = batchOrders.length > 0
+          ? `共解析 ${batchOrders.length} 筆訂單（可預覽小卡並個別調整改期）`
+          : '尚未解析訂單';
+
+        for (let idx = 0; idx < batchOrders.length; idx++) {
+          const ord = batchOrders[idx];
+          const card = document.createElement('div');
+          card.className = 'batch-card';
+
+          const head = document.createElement('div');
+          head.className = 'batch-card-head';
+          const title = document.createElement('strong');
+          title.style.fontSize = '13px';
+          title.textContent = `#${idx + 1} ${ord.filename}`;
+
+          const actions = document.createElement('div');
+          actions.style.display = 'flex';
+          actions.style.gap = '6px';
+
+          const btnResched = document.createElement('button');
+          btnResched.type = 'button';
+          btnResched.className = `btn btn-reschedule${ord.isRescheduled ? ' active' : ''}`;
+          btnResched.style.padding = '4px 8px';
+          btnResched.textContent = ord.isRescheduled ? '✓ 已改期' : '🔄 改期';
+          btnResched.onclick = async () => {
+            ord.isRescheduled = !ord.isRescheduled;
+            const stripRe = /\n?^\s*備[註注][：:]\s*這位客人已改過期\s*$/gm;
+            if (ord.isRescheduled) {
+              if (ord.cakeText || !ord.flowerText) {
+                ord.cakeText = ord.cakeText ? `${ord.cakeText}\n${RESCHEDULE_NOTE}` : RESCHEDULE_NOTE;
+              } else {
+                ord.flowerText = `${ord.flowerText}\n${RESCHEDULE_NOTE}`;
+              }
+            } else {
+              ord.cakeText = ord.cakeText.replace(stripRe, '').trim();
+              ord.flowerText = ord.flowerText.replace(stripRe, '').trim();
+            }
+            await renderBatchCardItem(ord);
+            renderBatchPreviewGrid();
+          };
+
+          const btnLoad = document.createElement('button');
+          btnLoad.type = 'button';
+          btnLoad.className = 'btn';
+          btnLoad.style.padding = '4px 8px';
+          btnLoad.style.fontSize = '12px';
+          btnLoad.textContent = '✏️ 單筆編輯';
+          btnLoad.onclick = () => {
+            setNotePlainText(ord.rawText);
+            parseNoteContent();
+            if (ord.isRescheduled && !hasRescheduleNote()) {
+              btnReschedule.click();
+            }
+            batchSection.classList.remove('open');
+            singleModeGrid.style.display = '';
+            btnToggleBatch.textContent = '📦 批次輸入';
+          };
+
+          const btnDel = document.createElement('button');
+          btnDel.type = 'button';
+          btnDel.className = 'btn';
+          btnDel.style.padding = '4px 8px';
+          btnDel.style.fontSize = '12px';
+          btnDel.textContent = '×';
+          btnDel.onclick = () => {
+            batchOrders = batchOrders.filter(x => x.id !== ord.id);
+            renderBatchPreviewGrid();
+          };
+
+          actions.appendChild(btnResched);
+          actions.appendChild(btnLoad);
+          actions.appendChild(btnDel);
+          head.appendChild(title);
+          head.appendChild(actions);
+
+          const meta = document.createElement('div');
+          meta.className = 'hint';
+          meta.style.marginTop = '0';
+          meta.textContent = `日期：${ord.dateTag || '未指定'} ｜ 時間：${(ord.state.pickup && ord.state.pickup.time) || '未指定'} ｜ 總金額：$${extractTotalFromPricing(ord.pricingText)}`;
+
+          const preview = document.createElement('div');
+          preview.className = 'batch-card-preview';
+          if (ord.canvas) {
+            const img = document.createElement('img');
+            img.src = ord.canvas.toDataURL('image/png');
+            preview.appendChild(img);
+          } else {
+            preview.innerHTML = '<span class="hint">無法產生預覽</span>';
+          }
+
+          card.appendChild(head);
+          card.appendChild(meta);
+          card.appendChild(preview);
+          batchPreviewList.appendChild(card);
+        }
+      }
+
+      btnBatchParse.addEventListener('click', async () => {
+        const chunks = splitBatchOrderTexts(batchRawInput.value);
+        if (chunks.length === 0) {
+          showBatchStatus('warn', '⚠️ 請先貼上至少一筆訂單內容！');
+          return;
+        }
+        batchOrders = [];
+        for (let i = 0; i < chunks.length; i++) {
+          const text = chunks[i];
+          const st = (window.Extractor && typeof window.Extractor.parseOrderText === 'function')
+            ? window.Extractor.parseOrderText(text)
+            : { orderType: 'cake', pickup: {}, cake: {}, flower: {}, customer: {} };
+          let cakeText = '';
+          let flowerText = '';
+          if (window.Extractor && typeof window.Extractor.splitOrderText === 'function') {
+            const sp = window.Extractor.splitOrderText(text);
+            cakeText = (sp.cakeText && sp.cakeText !== '無') ? sp.cakeText : '';
+            flowerText = (sp.flowerText && sp.flowerText !== '無') ? sp.flowerText : '';
+          }
+          const dateVal = (st.pickup && st.pickup.date) || '';
+          const dateTag = (st.pickup && st.pickup.dateTag) || inferDateTag(dateVal);
+          const lineName = ((st.customer && (st.customer.lineName || st.customer.name)) || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+          const filename = buildCardFilename(dateTag, (st.pickup && st.pickup.time) || '', lineName);
+          const isRescheduled = /這位客人已改過期/.test(text);
+
+          const ord = {
+            id: `${Date.now()}_${i}`,
+            rawText: text,
+            state: st,
+            cakeText,
+            flowerText,
+            pricingText: extractPricingFromText(text),
+            dateTag,
+            filename,
+            canvas: null,
+            isRescheduled
+          };
+          await renderBatchCardItem(ord);
+          batchOrders.push(ord);
+        }
+        await renderBatchPreviewGrid();
+        showBatchStatus('info', `⚡ 已解析 ${batchOrders.length} 筆訂單，請先預覽下方小卡確認無誤再送出！`);
+      });
+
+      btnBatchClear.addEventListener('click', () => {
+        batchRawInput.value = '';
+        batchOrders = [];
+        batchPreviewList.innerHTML = '';
+        batchCountHint.textContent = '尚未解析訂單';
+        batchStatusBox.className = 'status-box';
+      });
+
+      btnBatchSendAll.addEventListener('click', async () => {
+        const webhookUrl = getWebhookUrl();
+        if (!webhookUrl) {
+          showBatchStatus('error', '❌ 請先在上方「⚙️ 網址設定」填寫 Apps Script Web App 網址！');
+          return;
+        }
+        if (batchOrders.length === 0) {
+          showBatchStatus('warn', '⚠️ 請先貼上訂單並點擊「⚡ 解析並預視全部」！');
+          return;
+        }
+        btnBatchSendAll.disabled = true;
+        let okCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < batchOrders.length; i++) {
+          const ord = batchOrders[i];
+          showBatchStatus('info', `⏳ 正在送出第 ${i + 1} / ${batchOrders.length} 筆（${ord.filename}）...`);
+          try {
+            if (!ord.canvas) await renderBatchCardItem(ord);
+            const st = ord.state || {};
+            const hasFlowerText = Boolean(ord.flowerText);
+            const lineNameVal = ((st.customer && (st.customer.lineName || st.customer.name)) || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+            const sheetsPayload = {
+              pickupDate: ord.dateTag || (st.pickup && st.pickup.date) || '',
+              dateTag: ord.dateTag,
+              pickupTime: (st.pickup && st.pickup.time) || '',
+              location: (st.pickup && st.pickup.location) || '',
+              customerName: (st.customer && st.customer.name) || '',
+              customerPhone: (st.customer && st.customer.phone) || '',
+              lineName: (st.customer && st.customer.lineName) || '',
+              orderType: st.orderType || 'cake',
+              cakeSize: (st.cake && st.cake.size) || '',
+              cakeFlavor: (st.cake && st.cake.flavor) || '',
+              cakeInscription: (st.cake && st.cake.inscription) || '',
+              addon: (st.cake && st.cake.addon) || '',
+              flowerBudget: hasFlowerText ? ((st.flower && st.flower.budget) || '') : '',
+              flowerColor: hasFlowerText ? ((st.flower && st.flower.color) || '') : '',
+              flowerPaper: hasFlowerText ? ((st.flower && st.flower.paper) || '') : '',
+              totalPrice: extractTotalFromPricing(ord.pricingText),
+              cakeText: ord.cakeText,
+              flowerText: ord.flowerText,
+              pricingText: ord.pricingText,
+              filename: ord.filename,
+              reviewStatus: '⏳ 待複查',
+              nikkiChecked: false,
+              isRescheduled: ord.isRescheduled,
+              rescheduleNote: ord.isRescheduled ? '這位客人已改過期' : '',
+              rawText: ord.rawText
+            };
+            const drivePayload = {
+              action: 'uploadCardToDrive',
+              folderId: DRIVE_FOLDER_ID,
+              filename: ord.filename,
+              pickupDate: (st.pickup && st.pickup.date) || ord.dateTag,
+              dateTag: ord.dateTag,
+              lineName: lineNameVal,
+              preserveExistingIfNoPhoto: true,
+              base64Image: ord.canvas.toDataURL('image/png')
+            };
+            await Promise.all([
+              postToGas(webhookUrl, sheetsPayload),
+              postToGas(webhookUrl, drivePayload)
+            ]);
+            okCount++;
+          } catch (_) {
+            failCount++;
+          }
+        }
+
+        btnBatchSendAll.disabled = false;
+        showBatchStatus(
+          failCount === 0 ? 'success' : 'warn',
+          `📦 批次送出完成：✅ 成功 ${okCount} 筆${failCount > 0 ? `、❌ 失敗 ${failCount} 筆` : ''}！`
+        );
       });
     })();
   </script>
