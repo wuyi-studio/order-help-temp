@@ -175,9 +175,38 @@
 
     #rawNoteInput {
       min-height: 185px;
-      resize: vertical;
+      max-height: 360px;
+      overflow-y: auto;
       line-height: 1.55;
       background: #fffdfb;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      outline: none;
+    }
+
+    #rawNoteInput:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.1);
+    }
+
+    #rawNoteInput:empty::before {
+      content: attr(data-placeholder);
+      color: #94a3b8;
+      white-space: pre-wrap;
+      pointer-events: none;
+    }
+
+    #rawNoteInput img {
+      max-width: 140px;
+      max-height: 120px;
+      border-radius: 6px;
+      margin: 4px 4px 4px 0;
+      border: 1px solid var(--border-strong);
+      vertical-align: middle;
     }
 
     .hint {
@@ -373,7 +402,7 @@
         </div>
 
         <div class="paste-zone">
-          <textarea id="rawNoteInput" placeholder="請在這裡貼上複製的記事本內容（例如：取貨日期、時間、地點、姓名、電話、蛋糕/花束規格、金額明細）...&#10;&#10;💡 提示：若複製時有包含圖片，直接在此按 Cmd+V 也會自動抓取圖片！"></textarea>
+          <div id="rawNoteInput" contenteditable="true" data-placeholder="請點這裡並按 Cmd+V（或 Ctrl+V）貼上複製的記事本內容（支援同時貼上文字與圖片）...&#10;&#10;💡 提示：從 LINE 記事本或 Apple 備忘錄複製後直接貼上，文字與圖片都會自動抓進來！"></div>
           <div class="hint">支援自動識別多蛋糕/多花束、金額明細、日期格式（如 11/08、11.8、1108）與剪貼簿圖片。</div>
         </div>
 
@@ -2042,12 +2071,23 @@ if (typeof module !== 'undefined' && module.exports) {
         });
       }
 
-      function addImageDataUrl(dataUrl) {
-        if (!dataUrl || !dataUrl.startsWith('data:image')) return;
+      function getNotePlainText() {
+        return (rawNoteInput.innerText || rawNoteInput.textContent || '').replace(/\u00a0/g, ' ').trim();
+      }
+
+      function setNotePlainText(txt) {
+        rawNoteInput.innerText = txt || '';
+      }
+
+      function addImageDataUrl(src) {
+        if (!src) return;
+        const isAllowed = src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:');
+        if (!isAllowed) return;
+        if (uploadedImages.some(x => x.dataUrl === src)) return;
         const defaultCat = (fieldFlowerText.value.trim() && !fieldCakeText.value.trim()) ? 'flower' : 'cake';
         uploadedImages.push({
           id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          dataUrl,
+          dataUrl: src,
           category: defaultCat
         });
         renderImagesList();
@@ -2086,8 +2126,8 @@ if (typeof module !== 'undefined' && module.exports) {
       }
 
       function parseNoteContent() {
-        const text = rawNoteInput.value || '';
-        if (!text.trim()) return;
+        const text = getNotePlainText();
+        if (!text) return;
 
         if (window.Extractor && typeof window.Extractor.parseOrderText === 'function') {
           parsedState = window.Extractor.parseOrderText(text);
@@ -2139,7 +2179,7 @@ if (typeof module !== 'undefined' && module.exports) {
         else if (hasFlower) parsedState.orderType = 'flower';
         else parsedState.orderType = 'cake';
 
-        parsedState.rawText = rawNoteInput.value.trim();
+        parsedState.rawText = getNotePlainText();
         return parsedState;
       }
 
@@ -2156,7 +2196,7 @@ if (typeof module !== 'undefined' && module.exports) {
           items.push({ type: 'cake', text: fieldCakeText.value.trim(), images: cakeImgs, addonImages: addonImgs });
         }
         if (items.length === 0) {
-          items.push({ type: 'cake', text: rawNoteInput.value.trim(), images: cakeImgs, addonImages: addonImgs });
+          items.push({ type: 'cake', text: getNotePlainText(), images: cakeImgs, addonImages: addonImgs });
         }
         return items;
       }
@@ -2196,51 +2236,88 @@ if (typeof module !== 'undefined' && module.exports) {
         }
       }
 
+      function extractImagesFromHtml(html) {
+        if (!html) return [];
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        return Array.from(doc.querySelectorAll('img'))
+          .map(img => img.getAttribute('src') || '')
+          .filter(src => src && (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')));
+      }
+
+      function scanNoteDomForImages() {
+        const domImgs = Array.from(rawNoteInput.querySelectorAll('img'));
+        for (const imgEl of domImgs) {
+          const src = imgEl.getAttribute('src') || '';
+          if (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')) {
+            addImageDataUrl(src);
+          }
+        }
+      }
+
       async function handlePasteEvent(e) {
         const cd = e.clipboardData;
         if (!cd) return;
 
-        let gotImage = false;
+        // 1. 必須在任何 await 之前同步讀取所有剪貼簿資料，否則瀏覽器會清空 clipboardData！
+        const plain = cd.getData('text/plain') || '';
+        const html = cd.getData('text/html') || '';
+        const htmlImgSrcs = extractImagesFromHtml(html);
+
+        const imageBlobs = [];
         if (cd.items) {
-          for (const item of cd.items) {
+          for (const item of Array.from(cd.items)) {
             if (item.type && item.type.startsWith('image/')) {
-              const blob = item.getAsFile();
-              if (blob) {
-                const dataUrl = await readBlobAsDataUrl(blob);
-                addImageDataUrl(dataUrl);
-                gotImage = true;
-              }
+              const f = item.getAsFile();
+              if (f) imageBlobs.push(f);
+            }
+          }
+        }
+        if (imageBlobs.length === 0 && cd.files && cd.files.length > 0) {
+          for (const f of Array.from(cd.files)) {
+            if (f.type && f.type.startsWith('image/')) {
+              imageBlobs.push(f);
             }
           }
         }
 
-        const html = cd.getData('text/html');
-        if (html && !gotImage) {
-          const doc = new DOMParser().parseFromString(html, 'text/html');
-          const imgs = doc.querySelectorAll('img');
-          for (const imgEl of imgs) {
-            const src = imgEl.getAttribute('src') || '';
-            if (src.startsWith('data:image')) {
-              addImageDataUrl(src);
-            }
+        const isInsideNoteBox = (e.target === rawNoteInput || rawNoteInput.contains(e.target));
+        const isOtherInput = !isInsideNoteBox && (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
+
+        // 若游標不在其他輸入框，且不是在 rawNoteInput 內貼上，幫忙把文字塞進 rawNoteInput
+        if (!isInsideNoteBox && !isOtherInput && plain.trim()) {
+          e.preventDefault();
+          setNotePlainText(plain);
+          rawNoteInput.focus();
+        }
+
+        // 2. 處理圖片 blobs
+        for (const blob of imageBlobs) {
+          const dataUrl = await readBlobAsDataUrl(blob);
+          addImageDataUrl(dataUrl);
+        }
+
+        // 3. 處理 HTML 內含圖片（例如 LINE 記事本複製出的 <img src="https://...">）
+        if (imageBlobs.length === 0 && htmlImgSrcs.length > 0) {
+          for (const src of htmlImgSrcs) {
+            addImageDataUrl(src);
           }
         }
 
-        // 若不是在 textarea 貼上純文字，幫忙填入 rawNoteInput
-        if (document.activeElement !== rawNoteInput) {
-          const plain = cd.getData('text/plain');
-          if (plain && plain.trim()) {
-            rawNoteInput.value = plain;
-            parseNoteContent();
+        // 4. 等待 contenteditable 原生貼上完成後，再掃描 DOM 內的圖片並解析文字
+        setTimeout(() => {
+          scanNoteDomForImages();
+          parseNoteContent();
+          const txtLen = getNotePlainText().length;
+          if (txtLen > 0 || uploadedImages.length > 0) {
+            showStatus('info', `📋 已貼上記事本內容！（文字 ${txtLen} 字、圖片 ${uploadedImages.length} 張）`);
           }
-        } else {
-          setTimeout(parseNoteContent, 30);
-        }
+        }, 60);
       }
 
       document.addEventListener('paste', handlePasteEvent);
 
       rawNoteInput.addEventListener('input', () => {
+        scanNoteDomForImages();
         parseNoteContent();
       });
 
@@ -2259,7 +2336,15 @@ if (typeof module !== 'undefined' && module.exports) {
                   const blob = await clipItem.getType(type);
                   const txt = await blob.text();
                   if (txt.trim()) {
-                    rawNoteInput.value = txt;
+                    setNotePlainText(txt);
+                    gotAny = true;
+                  }
+                } else if (type === 'text/html') {
+                  const blob = await clipItem.getType(type);
+                  const htmlTxt = await blob.text();
+                  const srcs = extractImagesFromHtml(htmlTxt);
+                  for (const src of srcs) {
+                    addImageDataUrl(src);
                     gotAny = true;
                   }
                 } else if (type.startsWith('image/')) {
@@ -2272,22 +2357,22 @@ if (typeof module !== 'undefined' && module.exports) {
             }
             if (gotAny) {
               parseNoteContent();
-              showStatus('info', '📋 已讀取剪貼簿內容並自動解析！');
+              showStatus('info', `📋 已讀取剪貼簿內容並自動解析！（文字 ${getNotePlainText().length} 字、圖片 ${uploadedImages.length} 張）`);
               return;
             }
           }
           if (navigator.clipboard && navigator.clipboard.readText) {
             const txt = await navigator.clipboard.readText();
             if (txt && txt.trim()) {
-              rawNoteInput.value = txt;
+              setNotePlainText(txt);
               parseNoteContent();
               showStatus('info', '📋 已讀取剪貼簿文字並自動解析！');
               return;
             }
           }
-          showStatus('warn', '⚠️ 剪貼簿目前沒有文字或圖片，請直接在上方文字框按 Cmd+V 貼上。');
+          showStatus('warn', '⚠️ 剪貼簿目前沒有文字或圖片，請點一下上方輸入框再按 Cmd+V 貼上。');
         } catch (err) {
-          showStatus('warn', `⚠️ 無法自動讀取剪貼簿（${err.message}），請直接在文字框內按 Cmd+V / Ctrl+V 貼上！`);
+          showStatus('warn', `⚠️ 無法自動讀取剪貼簿（${err.message}），請點一下上方輸入框再按 Cmd+V / Ctrl+V 貼上！`);
         }
       });
 
@@ -2336,7 +2421,7 @@ if (typeof module !== 'undefined' && module.exports) {
       });
 
       document.getElementById('btnClearAll').addEventListener('click', () => {
-        rawNoteInput.value = '';
+        rawNoteInput.innerHTML = '';
         fieldDateTag.value = '';
         fieldPickupDate.value = '';
         fieldPickupTime.value = '';
@@ -2436,7 +2521,7 @@ if (typeof module !== 'undefined' && module.exports) {
           filename: filenameVal,
           reviewStatus: '⏳ 待複查',
           nikkiChecked: false,
-          rawText: rawNoteInput.value.trim()
+          rawText: getNotePlainText()
         };
 
         const drivePayload = {
