@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📋 梧藝 WUYI 記事本同步工具（Google Drive ＋ Google 試算表）</title>
+  <style>
+    :root {
+      --bg: #fffdfa;
+      --card: #ffffff;
+      --border: #fecdd3;
+      --border-strong: #fda4af;
+      --primary: #e11d48;
+      --primary-hover: #be123c;
+      --primary-soft: #fff1f2;
+      --text: #1e293b;
+      --muted: #64748b;
+      --success: #16a34a;
+      --success-bg: #dcfce7;
+      --warn: #d97706;
+      --warn-bg: #fef3c7;
+      --error: #dc2626;
+      --error-bg: #fee2e2;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      background: linear-gradient(135deg, #fff5f7 0%, #fffdfa 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: var(--card);
+      border: 1.5px solid var(--border-strong);
+      border-radius: 16px;
+      padding: 16px 22px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 16px rgba(225, 29, 72, 0.06);
+    }
+
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-title h1 {
+      margin: 0;
+      font-size: 20px;
+      color: #9f1239;
+    }
+
+    .header-title p {
+      margin: 2px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+    }
+
+    @media (max-width: 920px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+    }
+
+    .panel-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #881337;
+      margin: 0 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .btn {
+      border: 1.5px solid #cbd5e1;
+      background: #ffffff;
+      color: #334155;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover { background: #f8fafc; border-color: #94a3b8; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+      font-size: 15px;
+      padding: 12px 18px;
+      width: 100%;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(225, 29, 72, 0.22);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+
+    .btn-soft {
+      background: var(--primary-soft);
+      border-color: var(--border-strong);
+      color: #9f1239;
+    }
+
+    .btn-soft:hover:not(:disabled) {
+      background: #ffe4e6;
+    }
+
+    .paste-zone {
+      position: relative;
+      margin-bottom: 14px;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--text);
+      background: #ffffff;
+      transition: border-color 0.15s;
+    }
+
+    textarea:focus, input[type="text"]:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.1);
+    }
+
+    #rawNoteInput {
+      min-height: 185px;
+      resize: vertical;
+      line-height: 1.55;
+      background: #fffdfb;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .form-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+
+    .field.full { grid-column: 1 / -1; }
+
+    .images-section {
+      border: 1.5px dashed var(--border-strong);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff9fa;
+      margin-bottom: 14px;
+    }
+
+    .images-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+
+    .images-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .img-chip {
+      position: relative;
+      width: 92px;
+      border: 1.5px solid var(--border-strong);
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .img-chip img {
+      width: 82px;
+      height: 70px;
+      object-fit: cover;
+      border-radius: 6px;
+    }
+
+    .img-chip select {
+      width: 100%;
+      font-size: 11px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 2px;
+    }
+
+    .img-remove {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: none;
+      background: #ef4444;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .preview-box {
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: #f8fafc;
+      padding: 12px;
+      text-align: center;
+      min-height: 260px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .preview-box img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+    }
+
+    .filename-badge {
+      display: inline-block;
+      background: var(--primary-soft);
+      color: #9f1239;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .status-box {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      display: none;
+    }
+
+    .status-box.show { display: block; }
+    .status-box.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+    .status-box.success { background: var(--success-bg); border: 1px solid #86efac; color: #166534; }
+    .status-box.warn { background: var(--warn-bg); border: 1px solid #fcd34d; color: #92400e; }
+    .status-box.error { background: var(--error-bg); border: 1px solid #fca5a5; color: #991b1b; }
+
+    .settings-drawer {
+      display: none;
+      background: #ffffff;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .settings-drawer.open { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-title">
+        <div style="font-size: 28px;">📋</div>
+        <div>
+          <h1>梧藝 WUYI 記事本同步工具</h1>
+          <p>複製 LINE 記事本 / Apple 備忘錄內容貼上（支援文字＋圖片），一鍵產生確認小卡並送至 Google Drive 與 Google 試算表</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="btn btn-soft" id="btnReadClipboard">📋 讀取剪貼簿</button>
+        <button type="button" class="btn" id="btnToggleSettings">⚙️ 網址設定</button>
+        <button type="button" class="btn" id="btnClearAll">🗑️ 清空</button>
+      </div>
+    </div>
+
+    <div class="settings-drawer" id="settingsDrawer">
+      <div class="field">
+        <label>Google Apps Script Web App 網址（沿用現有 Code.gs 部署）</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="inputWebhookUrl" placeholder="https://script.google.com/macros/s/.../exec">
+          <button type="button" class="btn btn-soft" id="btnSaveWebhook">儲存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- 左欄：貼上記事本內容與解析欄位 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>1️⃣ 貼上記事本內容（支援直接 Cmd+V / Ctrl+V 貼上文字與圖片）</span>
+        </div>
+
+        <div class="paste-zone">
+          <textarea id="rawNoteInput" placeholder="請在這裡貼上複製的記事本內容（例如：取貨日期、時間、地點、姓名、電話、蛋糕/花束規格、金額明細）...&#10;&#10;💡 提示：若複製時有包含圖片，直接在此按 Cmd+V 也會自動抓取圖片！"></textarea>
+          <div class="hint">支援自動識別多蛋糕/多花束、金額明細、日期格式（如 11/08、11.8、1108）與剪貼簿圖片。</div>
+        </div>
+
+        <div class="images-section" id="imageDropZone">
+          <div class="images-header">
+            <strong style="font-size: 13px; color: #881337;">🖼️ 附帶圖片（可拖曳圖片至此或直接貼上）</strong>
+            <div>
+              <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
+              <button type="button" class="btn" id="btnUploadImg" style="padding: 5px 10px; font-size: 12px;">＋ 選擇圖片</button>
+            </div>
+          </div>
+          <div class="images-list" id="imagesList">
+            <span class="hint" id="noImgHint">尚未加入圖片（若無圖片將產生純文字取貨小卡）</span>
+          </div>
+        </div>
+
+        <div class="panel-title" style="margin-top: 14px;">
+          <span>2️⃣ 自動解析結果（可手動微調）</span>
+          <button type="button" class="btn" id="btnReparse" style="padding: 4px 10px; font-size: 12px;">⚡ 重新解析</button>
+        </div>
+
+        <div class="form-grid-3">
+          <div class="field">
+            <label>標籤日期 (例: 1108)</label>
+            <input type="text" id="fieldDateTag" placeholder="1108">
+          </div>
+          <div class="field">
+            <label>取貨日期</label>
+            <input type="text" id="fieldPickupDate" placeholder="2026/11/08">
+          </div>
+          <div class="field">
+            <label>取貨時間</label>
+            <input type="text" id="fieldPickupTime" placeholder="15:00">
+          </div>
+        </div>
+
+        <div class="form-grid-3">
+          <div class="field">
+            <label>自取地點</label>
+            <input type="text" id="fieldLocation" placeholder="板橋店 / 內湖店">
+          </div>
+          <div class="field">
+            <label>顧客姓名 / LINE 名稱</label>
+            <input type="text" id="fieldCustomerName" placeholder="姓名">
+          </div>
+          <div class="field">
+            <label>聯絡電話</label>
+            <input type="text" id="fieldPhone" placeholder="09xx-xxx-xxx">
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label>🎂 蛋糕明細</label>
+            <textarea id="fieldCakeText" rows="4" placeholder="尺寸、口味、夾餡、題字、加購..."></textarea>
+          </div>
+          <div class="field">
+            <label>💐 花束明細</label>
+            <textarea id="fieldFlowerText" rows="4" placeholder="花束預算、色系、包裝..."></textarea>
+          </div>
+          <div class="field full">
+            <label>💵 金額明細</label>
+            <textarea id="fieldPricingText" rows="3" placeholder="蛋糕$...&#10;總共$..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右欄：小卡預覽與送出 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>3️⃣ 取貨確認小卡預覽 & 送出</span>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="btn" id="btnRefreshCard" style="padding: 4px 10px; font-size: 12px;">🔄 更新預覽</button>
+            <button type="button" class="btn" id="btnDownloadCard" style="padding: 4px 10px; font-size: 12px;">💾 下載圖檔</button>
+          </div>
+        </div>
+
+        <div style="text-align: center;">
+          <span class="filename-badge" id="filenameBadge">檔名：未指定日期 客戶.png</span>
+        </div>
+
+        <div class="preview-box" id="previewBox">
+          <span class="hint">貼上記事本內容後，將自動在此產生取貨確認小卡預覽</span>
+        </div>
+
+        <button type="button" class="btn btn-primary" id="btnSendAll">
+          🚀 送出至 Google Drive ＋ Google 試算表
+        </button>
+
+        <div class="status-box" id="statusBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../src/content/extractor.js"></script>
+  <script src="../src/content/card-renderer.js"></script>
+  <script>
+    (function () {
+      const DEFAULT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyWmZqHYc1THus_JRa54ZDsU3rRck4r4snh_7B3mzjjKXrNLIUTWmibCQQloiSXefL_kQ/exec';
+      const DRIVE_FOLDER_ID = '1aFAvK33ML41x0JgHlCF6WcA6006Emq4J';
+      const WEBHOOK_STORAGE_KEY = 'wuyi_note_sync_webhook_url';
+      const NUM_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+      const rawNoteInput = document.getElementById('rawNoteInput');
+      const fieldDateTag = document.getElementById('fieldDateTag');
+      const fieldPickupDate = document.getElementById('fieldPickupDate');
+      const fieldPickupTime = document.getElementById('fieldPickupTime');
+      const fieldLocation = document.getElementById('fieldLocation');
+      const fieldCustomerName = document.getElementById('fieldCustomerName');
+      const fieldPhone = document.getElementById('fieldPhone');
+      const fieldCakeText = document.getElementById('fieldCakeText');
+      const fieldFlowerText = document.getElementById('fieldFlowerText');
+      const fieldPricingText = document.getElementById('fieldPricingText');
+
+      const imagesList = document.getElementById('imagesList');
+      const fileInput = document.getElementById('fileInput');
+      const imageDropZone = document.getElementById('imageDropZone');
+      const previewBox = document.getElementById('previewBox');
+      const filenameBadge = document.getElementById('filenameBadge');
+      const statusBox = document.getElementById('statusBox');
+      const btnSendAll = document.getElementById('btnSendAll');
+      const inputWebhookUrl = document.getElementById('inputWebhookUrl');
+      const settingsDrawer = document.getElementById('settingsDrawer');
+
+      let uploadedImages = []; // { id, dataUrl, category: 'cake' | 'flower' | 'addon' }
+      let parsedState = window.Extractor ? window.Extractor.createEmptyOrderState() : {
+        orderType: 'cake',
+        pickup: { date: '', dateTag: '', time: '', location: '' },
+        cake: { size: '', flavor: '', inscription: '', addon: '', rawCakeText: '' },
+        flower: { budget: '', color: '', paper: '', rawFlowerText: '' },
+        customer: { lineName: '', name: '', phone: '' },
+        rawText: ''
+      };
+      let currentCanvas = null;
+
+      function getWebhookUrl() {
+        return (localStorage.getItem(WEBHOOK_STORAGE_KEY) || DEFAULT_WEBHOOK_URL).trim();
+      }
+
+      inputWebhookUrl.value = getWebhookUrl();
+
+      function showStatus(type, html) {
+        statusBox.className = `status-box show ${type}`;
+        statusBox.innerHTML = html;
+      }
+
+      function format12HourTime(rawTime) {
+        if (!rawTime || typeof rawTime !== 'string') return '';
+        const s = rawTime.trim();
+        if (!s) return '';
+        const mColon = s.match(/(?:(?:上午|下午|早上|中午|晚上)\s*)?(\d{1,2})[:：](\d{2})/);
+        if (mColon) {
+          let hh = parseInt(mColon[1], 10);
+          const mm = mColon[2];
+          if (hh > 12) hh -= 12;
+          if (hh === 0) hh = 12;
+          if (mm === '00') return `${hh}點`;
+          if (mm === '30') return `${hh}點半`;
+          return `${hh}點${mm}`;
+        }
+        const mDian = s.match(/(?:(?:上午|下午|早上|中午|晚上)\s*)?(\d{1,2})\s*點(?:\s*(半|30(?:分)?|00(?:分)?|\d{1,2}(?:分)?))?/);
+        if (mDian) {
+          let hh = parseInt(mDian[1], 10);
+          const minPart = mDian[2] || '';
+          if (hh > 12) hh -= 12;
+          if (hh === 0) hh = 12;
+          if (!minPart || minPart.startsWith('00')) return `${hh}點`;
+          if (minPart === '半' || minPart.startsWith('30')) return `${hh}點半`;
+          return `${hh}點${minPart.replace(/分$/, '')}`;
+        }
+        const mPure = s.match(/^(\d{1,2})$/);
+        if (mPure) {
+          let hh = parseInt(mPure[1], 10);
+          if (hh > 12) hh -= 12;
+          if (hh === 0) hh = 12;
+          return `${hh}點`;
+        }
+        return s;
+      }
+
+      function buildCardFilename(dateTag, rawTime, lineName) {
+        const time12 = format12HourTime(rawTime);
+        const cleanDate = (dateTag || '').trim().replace(/[\/\\:*?"<>|]/g, '-');
+        const cleanTime = (time12 || '').trim().replace(/[\/\\:*?"<>|]/g, '');
+        const cleanName = (lineName || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+        const parts = [cleanDate, cleanTime, cleanName].filter(Boolean);
+        return parts.join(' ') + '.png';
+      }
+
+      function inferDateTag(rawDate) {
+        if (!rawDate) return '';
+        const s = rawDate.trim();
+        if (/^\d{4}$/.test(s)) return s;
+        const m = s.match(/(?:\d{4}[\/\-\.])?(\d{1,2})[\/\-\.](\d{1,2})/);
+        if (m) {
+          return String(m[1]).padStart(2, '0') + String(m[2]).padStart(2, '0');
+        }
+        return s.replace(/[\/\.]/g, '-');
+      }
+
+      function renderImagesList() {
+        imagesList.innerHTML = '';
+        if (uploadedImages.length === 0) {
+          const hint = document.createElement('span');
+          hint.className = 'hint';
+          hint.textContent = '尚未加入圖片（若無圖片將產生純文字取貨小卡）';
+          imagesList.appendChild(hint);
+          return;
+        }
+        uploadedImages.forEach((imgObj) => {
+          const chip = document.createElement('div');
+          chip.className = 'img-chip';
+
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'img-remove';
+          removeBtn.textContent = '×';
+          removeBtn.onclick = () => {
+            uploadedImages = uploadedImages.filter(x => x.id !== imgObj.id);
+            renderImagesList();
+            refreshCardPreview();
+          };
+
+          const imgEl = document.createElement('img');
+          imgEl.src = imgObj.dataUrl;
+
+          const sel = document.createElement('select');
+          sel.innerHTML = `
+            <option value="cake">🎂 蛋糕</option>
+            <option value="flower">💐 花束</option>
+            <option value="addon">🕯️ 加購</option>
+          `;
+          sel.value = imgObj.category;
+          sel.onchange = () => {
+            imgObj.category = sel.value;
+            refreshCardPreview();
+          };
+
+          chip.appendChild(removeBtn);
+          chip.appendChild(imgEl);
+          chip.appendChild(sel);
+          imagesList.appendChild(chip);
+        });
+      }
+
+      function addImageDataUrl(dataUrl) {
+        if (!dataUrl || !dataUrl.startsWith('data:image')) return;
+        const defaultCat = (fieldFlowerText.value.trim() && !fieldCakeText.value.trim()) ? 'flower' : 'cake';
+        uploadedImages.push({
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          dataUrl,
+          category: defaultCat
+        });
+        renderImagesList();
+        refreshCardPreview();
+      }
+
+      function readBlobAsDataUrl(blob) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      function extractPricingFromText(text) {
+        if (!text) return '';
+        if (window.Extractor && typeof window.Extractor.parsePricingText === 'function') {
+          const parsed = window.Extractor.parsePricingText(text);
+          if (parsed && parsed.rawPricingText) return parsed.rawPricingText;
+        }
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const priceLines = lines.filter(l => /\$/.test(l) || /^總共/.test(l));
+        return priceLines.join('\n');
+      }
+
+      function extractTotalFromPricing(pricingText) {
+        if (!pricingText) return '0';
+        if (window.Extractor && typeof window.Extractor.parsePricingText === 'function') {
+          const parsed = window.Extractor.parsePricingText(pricingText);
+          if (parsed && parsed.total && parsed.total !== '0') return parsed.total;
+        }
+        const m = pricingText.match(/總共[^\d$]*\$?\s*(\d[\d,]*)/);
+        if (m) return m[1].replace(/,/g, '');
+        return '0';
+      }
+
+      function parseNoteContent() {
+        const text = rawNoteInput.value || '';
+        if (!text.trim()) return;
+
+        if (window.Extractor && typeof window.Extractor.parseOrderText === 'function') {
+          parsedState = window.Extractor.parseOrderText(text);
+        }
+
+        const dateVal = (parsedState.pickup && parsedState.pickup.date) || '';
+        const dateTagVal = (parsedState.pickup && parsedState.pickup.dateTag) || inferDateTag(dateVal);
+
+        fieldDateTag.value = dateTagVal;
+        fieldPickupDate.value = dateVal;
+        fieldPickupTime.value = (parsedState.pickup && parsedState.pickup.time) || '';
+        fieldLocation.value = (parsedState.pickup && parsedState.pickup.location) || '';
+        fieldCustomerName.value = (parsedState.customer && (parsedState.customer.lineName || parsedState.customer.name)) || '';
+        fieldPhone.value = (parsedState.customer && parsedState.customer.phone) || '';
+
+        const cakeTxt = (parsedState.cake && parsedState.cake.rawCakeText) || '';
+        const flowerTxt = (parsedState.flower && parsedState.flower.rawFlowerText) || '';
+        fieldCakeText.value = cakeTxt;
+        fieldFlowerText.value = flowerTxt;
+        fieldPricingText.value = extractPricingFromText(text);
+
+        refreshCardPreview();
+      }
+
+      function syncFieldsToState() {
+        const dateTagVal = fieldDateTag.value.trim() || inferDateTag(fieldPickupDate.value.trim());
+        const custName = fieldCustomerName.value.trim();
+
+        parsedState.pickup = parsedState.pickup || {};
+        parsedState.pickup.date = fieldPickupDate.value.trim() || dateTagVal;
+        parsedState.pickup.dateTag = dateTagVal;
+        parsedState.pickup.time = fieldPickupTime.value.trim();
+        parsedState.pickup.location = fieldLocation.value.trim();
+
+        parsedState.customer = parsedState.customer || {};
+        parsedState.customer.name = custName;
+        parsedState.customer.lineName = custName;
+        parsedState.customer.phone = fieldPhone.value.trim();
+
+        parsedState.cake = parsedState.cake || {};
+        parsedState.cake.rawCakeText = fieldCakeText.value.trim();
+
+        parsedState.flower = parsedState.flower || {};
+        parsedState.flower.rawFlowerText = fieldFlowerText.value.trim();
+
+        const hasCake = Boolean(parsedState.cake.rawCakeText);
+        const hasFlower = Boolean(parsedState.flower.rawFlowerText);
+        if (hasCake && hasFlower) parsedState.orderType = 'both';
+        else if (hasFlower) parsedState.orderType = 'flower';
+        else parsedState.orderType = 'cake';
+
+        parsedState.rawText = rawNoteInput.value.trim();
+        return parsedState;
+      }
+
+      function buildOrderItems() {
+        const items = [];
+        const cakeImgs = uploadedImages.filter(x => x.category === 'cake').map(x => x.dataUrl);
+        const flowerImgs = uploadedImages.filter(x => x.category === 'flower').map(x => x.dataUrl);
+        const addonImgs = uploadedImages.filter(x => x.category === 'addon').map(x => x.dataUrl);
+
+        if (fieldFlowerText.value.trim()) {
+          items.push({ type: 'flower', text: fieldFlowerText.value.trim(), images: flowerImgs, addonImages: [] });
+        }
+        if (fieldCakeText.value.trim()) {
+          items.push({ type: 'cake', text: fieldCakeText.value.trim(), images: cakeImgs, addonImages: addonImgs });
+        }
+        if (items.length === 0) {
+          items.push({ type: 'cake', text: rawNoteInput.value.trim(), images: cakeImgs, addonImages: addonImgs });
+        }
+        return items;
+      }
+
+      async function refreshCardPreview() {
+        syncFieldsToState();
+        const dateTagVal = parsedState.pickup.dateTag || inferDateTag(parsedState.pickup.date);
+        const lineName = (parsedState.customer.lineName || parsedState.customer.name || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+        const filename = buildCardFilename(dateTagVal, parsedState.pickup.time, lineName);
+        filenameBadge.textContent = `檔名：${filename}`;
+
+        if (!window.CardRenderer || typeof window.CardRenderer.renderCard !== 'function') {
+          previewBox.innerHTML = '<span class="hint">小卡渲染引擎載入失敗，請確認 ../src/content/card-renderer.js 路徑</span>';
+          return;
+        }
+
+        const cakeImgs = uploadedImages.filter(x => x.category === 'cake').map(x => x.dataUrl);
+        const flowerImgs = uploadedImages.filter(x => x.category === 'flower').map(x => x.dataUrl);
+        const addonImgs = uploadedImages.filter(x => x.category === 'addon').map(x => x.dataUrl);
+
+        try {
+          currentCanvas = await window.CardRenderer.renderCard(parsedState, {
+            items: buildOrderItems(),
+            flowerText: fieldFlowerText.value.trim(),
+            cakeText: fieldCakeText.value.trim(),
+            flowerImages: flowerImgs,
+            cakeImages: cakeImgs,
+            addonImages: addonImgs,
+            addonImage: addonImgs[0] || null
+          });
+          previewBox.innerHTML = '';
+          const img = document.createElement('img');
+          img.src = currentCanvas.toDataURL('image/png');
+          previewBox.appendChild(img);
+        } catch (err) {
+          previewBox.innerHTML = `<span class="hint">預覽產生失敗：${err.message}</span>`;
+        }
+      }
+
+      async function handlePasteEvent(e) {
+        const cd = e.clipboardData;
+        if (!cd) return;
+
+        let gotImage = false;
+        if (cd.items) {
+          for (const item of cd.items) {
+            if (item.type && item.type.startsWith('image/')) {
+              const blob = item.getAsFile();
+              if (blob) {
+                const dataUrl = await readBlobAsDataUrl(blob);
+                addImageDataUrl(dataUrl);
+                gotImage = true;
+              }
+            }
+          }
+        }
+
+        const html = cd.getData('text/html');
+        if (html && !gotImage) {
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          const imgs = doc.querySelectorAll('img');
+          for (const imgEl of imgs) {
+            const src = imgEl.getAttribute('src') || '';
+            if (src.startsWith('data:image')) {
+              addImageDataUrl(src);
+            }
+          }
+        }
+
+        // 若不是在 textarea 貼上純文字，幫忙填入 rawNoteInput
+        if (document.activeElement !== rawNoteInput) {
+          const plain = cd.getData('text/plain');
+          if (plain && plain.trim()) {
+            rawNoteInput.value = plain;
+            parseNoteContent();
+          }
+        } else {
+          setTimeout(parseNoteContent, 30);
+        }
+      }
+
+      document.addEventListener('paste', handlePasteEvent);
+
+      rawNoteInput.addEventListener('input', () => {
+        parseNoteContent();
+      });
+
+      [fieldDateTag, fieldPickupDate, fieldPickupTime, fieldLocation, fieldCustomerName, fieldPhone, fieldCakeText, fieldFlowerText, fieldPricingText].forEach((el) => {
+        el.addEventListener('input', () => refreshCardPreview());
+      });
+
+      document.getElementById('btnReadClipboard').addEventListener('click', async () => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.read) {
+            const items = await navigator.clipboard.read();
+            let gotAny = false;
+            for (const clipItem of items) {
+              for (const type of clipItem.types) {
+                if (type === 'text/plain') {
+                  const blob = await clipItem.getType(type);
+                  const txt = await blob.text();
+                  if (txt.trim()) {
+                    rawNoteInput.value = txt;
+                    gotAny = true;
+                  }
+                } else if (type.startsWith('image/')) {
+                  const blob = await clipItem.getType(type);
+                  const dataUrl = await readBlobAsDataUrl(blob);
+                  addImageDataUrl(dataUrl);
+                  gotAny = true;
+                }
+              }
+            }
+            if (gotAny) {
+              parseNoteContent();
+              showStatus('info', '📋 已讀取剪貼簿內容並自動解析！');
+              return;
+            }
+          }
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            const txt = await navigator.clipboard.readText();
+            if (txt && txt.trim()) {
+              rawNoteInput.value = txt;
+              parseNoteContent();
+              showStatus('info', '📋 已讀取剪貼簿文字並自動解析！');
+              return;
+            }
+          }
+          showStatus('warn', '⚠️ 剪貼簿目前沒有文字或圖片，請直接在上方文字框按 Cmd+V 貼上。');
+        } catch (err) {
+          showStatus('warn', `⚠️ 無法自動讀取剪貼簿（${err.message}），請直接在文字框內按 Cmd+V / Ctrl+V 貼上！`);
+        }
+      });
+
+      document.getElementById('btnUploadImg').addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        for (const f of files) {
+          const dataUrl = await readBlobAsDataUrl(f);
+          addImageDataUrl(dataUrl);
+        }
+        fileInput.value = '';
+      });
+
+      imageDropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        imageDropZone.style.background = '#ffe4e6';
+      });
+      imageDropZone.addEventListener('dragleave', () => {
+        imageDropZone.style.background = '#fff9fa';
+      });
+      imageDropZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        imageDropZone.style.background = '#fff9fa';
+        const files = Array.from(e.dataTransfer.files || []);
+        for (const f of files) {
+          if (f.type.startsWith('image/')) {
+            const dataUrl = await readBlobAsDataUrl(f);
+            addImageDataUrl(dataUrl);
+          }
+        }
+      });
+
+      document.getElementById('btnToggleSettings').addEventListener('click', () => {
+        settingsDrawer.classList.toggle('open');
+      });
+
+      document.getElementById('btnSaveWebhook').addEventListener('click', () => {
+        const url = inputWebhookUrl.value.trim();
+        if (!url) {
+          localStorage.removeItem(WEBHOOK_STORAGE_KEY);
+          inputWebhookUrl.value = DEFAULT_WEBHOOK_URL;
+        } else {
+          localStorage.setItem(WEBHOOK_STORAGE_KEY, url);
+        }
+        showStatus('success', '✅ Apps Script 網址已儲存！');
+      });
+
+      document.getElementById('btnClearAll').addEventListener('click', () => {
+        rawNoteInput.value = '';
+        fieldDateTag.value = '';
+        fieldPickupDate.value = '';
+        fieldPickupTime.value = '';
+        fieldLocation.value = '';
+        fieldCustomerName.value = '';
+        fieldPhone.value = '';
+        fieldCakeText.value = '';
+        fieldFlowerText.value = '';
+        fieldPricingText.value = '';
+        uploadedImages = [];
+        currentCanvas = null;
+        renderImagesList();
+        previewBox.innerHTML = '<span class="hint">貼上記事本內容後，將自動在此產生取貨確認小卡預覽</span>';
+        filenameBadge.textContent = '檔名：未指定日期 客戶.png';
+        statusBox.className = 'status-box';
+      });
+
+      document.getElementById('btnReparse').addEventListener('click', parseNoteContent);
+      document.getElementById('btnRefreshCard').addEventListener('click', refreshCardPreview);
+
+      document.getElementById('btnDownloadCard').addEventListener('click', async () => {
+        if (!currentCanvas) await refreshCardPreview();
+        if (!currentCanvas) return;
+        const dateTagVal = parsedState.pickup.dateTag || inferDateTag(parsedState.pickup.date);
+        const lineName = (parsedState.customer.lineName || parsedState.customer.name || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+        const filename = buildCardFilename(dateTagVal, parsedState.pickup.time, lineName);
+        window.CardRenderer.downloadCard(currentCanvas, filename);
+      });
+
+      async function postToGas(url, payload) {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (_) {
+          if (text.includes('accounts.google.com') || text.includes('Access Denied') || text.includes('<html')) {
+            throw new Error('Apps Script 權限未設為「所有人 (Anyone)」或網址錯誤');
+          }
+          return { status: 'success', raw: text };
+        }
+      }
+
+      btnSendAll.addEventListener('click', async () => {
+        const webhookUrl = getWebhookUrl();
+        if (!webhookUrl) {
+          showStatus('error', '❌ 請先在上方「⚙️ 網址設定」填寫 Apps Script Web App 網址！');
+          return;
+        }
+
+        syncFieldsToState();
+        const dateTagVal = parsedState.pickup.dateTag || inferDateTag(parsedState.pickup.date);
+        if (!dateTagVal) {
+          showStatus('warn', '⚠️ 請先填寫【標籤日期】或【取貨日期】（例：1108），以免產生空白單！');
+          return;
+        }
+
+        if (!currentCanvas) {
+          await refreshCardPreview();
+        }
+        if (!currentCanvas) {
+          showStatus('error', '❌ 無法產生取貨確認小卡圖片，請確認渲染引擎是否正常。');
+          return;
+        }
+
+        btnSendAll.disabled = true;
+        showStatus('info', '⏳ 正在同步至 Google 試算表並上傳小卡至 Google Drive...');
+
+        const lineNameVal = (parsedState.customer.lineName || parsedState.customer.name || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+        const filenameVal = buildCardFilename(dateTagVal, parsedState.pickup.time, lineNameVal);
+        const dataUrl = currentCanvas.toDataURL('image/png');
+        const totalVal = extractTotalFromPricing(fieldPricingText.value);
+
+        const sheetsPayload = {
+          pickupDate: dateTagVal || parsedState.pickup.date,
+          dateTag: dateTagVal,
+          pickupTime: parsedState.pickup.time,
+          location: parsedState.pickup.location,
+          customerName: parsedState.customer.name,
+          customerPhone: parsedState.customer.phone,
+          lineName: parsedState.customer.lineName,
+          orderType: parsedState.orderType,
+          cakeSize: (parsedState.cake && parsedState.cake.size) || '',
+          cakeFlavor: (parsedState.cake && parsedState.cake.flavor) || '',
+          cakeInscription: (parsedState.cake && parsedState.cake.inscription) || '',
+          addon: (parsedState.cake && parsedState.cake.addon) || '',
+          flowerBudget: (parsedState.flower && parsedState.flower.budget) || '',
+          flowerColor: (parsedState.flower && parsedState.flower.color) || '',
+          flowerPaper: (parsedState.flower && parsedState.flower.paper) || '',
+          totalPrice: totalVal,
+          cakeText: fieldCakeText.value.trim(),
+          flowerText: fieldFlowerText.value.trim(),
+          pricingText: fieldPricingText.value.trim(),
+          filename: filenameVal,
+          reviewStatus: '⏳ 待複查',
+          nikkiChecked: false,
+          rawText: rawNoteInput.value.trim()
+        };
+
+        const drivePayload = {
+          action: 'uploadCardToDrive',
+          folderId: DRIVE_FOLDER_ID,
+          filename: filenameVal,
+          pickupDate: parsedState.pickup.date || dateTagVal,
+          dateTag: dateTagVal,
+          lineName: lineNameVal,
+          preserveExistingIfNoPhoto: uploadedImages.length === 0,
+          base64Image: dataUrl
+        };
+
+        try {
+          const [sheetsRes, driveRes] = await Promise.all([
+            postToGas(webhookUrl, sheetsPayload),
+            postToGas(webhookUrl, drivePayload)
+          ]);
+
+          const msgs = [];
+          if (sheetsRes && (sheetsRes.status === 'success' || sheetsRes.success !== false)) {
+            msgs.push('✅ <strong>Google 試算表</strong>：已成功寫入 / 更新！');
+          } else {
+            msgs.push(`⚠️ <strong>Google 試算表</strong>：${(sheetsRes && sheetsRes.message) || '回傳異常'}`);
+          }
+
+          if (driveRes && (driveRes.fileId || (driveRes.data && driveRes.data.fileId))) {
+            const d = driveRes.data || driveRes;
+            if (d.preservedExistingImage) {
+              msgs.push('✅ <strong>Google Drive</strong>：已保留雲端原有含圖小卡（防洗圖保護）');
+            } else if (d.isDuplicate) {
+              msgs.push(`⚠️ <strong>Google Drive</strong>：雲端已有同名小卡【${filenameVal}】，已覆蓋更新！`);
+            } else {
+              msgs.push(`✅ <strong>Google Drive</strong>：小卡【${filenameVal}】上傳成功！`);
+            }
+          } else {
+            msgs.push(`⚠️ <strong>Google Drive</strong>：${(driveRes && (driveRes.error || driveRes.message)) || '上傳完成（未回傳 fileId）'}`);
+          }
+
+          showStatus('success', msgs.join('<br>'));
+        } catch (err) {
+          showStatus('error', `❌ 送出失敗：${err.message}`);
+        } finally {
+          btnSendAll.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

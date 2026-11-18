@@ -1,0 +1,149 @@
+/* 梧藝 WUYI Google 行事曆訂單小卡直接顯示注入樣式 */
+.wuyi-calendar-preview-box {
+  margin: 10px 0 12px 0;
+  padding: 10px;
+  background: #fffdfa;
+  border: 1.5px solid #fda4af;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 440px;
+  box-sizing: border-box;
+  animation: wuyiCalFadeIn 0.25s ease-out;
+}
+
+@keyframes wuyiCalFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.wuyi-calendar-preview-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  color: #be123c;
+  background: #ffe4e6;
+  padding: 4px 10px;
+  border-radius: 6px;
+  user-select: none;
+}
+
+.wuyi-calendar-preview-img {
+  width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid #fecdd3;
+  cursor: zoom-in;
+  background: #ffffff;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  display: block;
+}
+
+.wuyi-calendar-preview-img:hover {
+  transform: scale(1.01);
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.2);
+}
+
+.wuyi-calendar-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wuyi-calendar-btn-view {
+  background: #fff1f2;
+  border: 1px solid #fda4af;
+  color: #be123c;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.wuyi-calendar-btn-view:hover {
+  background: #fda4af;
+  color: #ffffff;
+}
+
+/* Lightbox 放大彈窗 */
+.wuyi-cal-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(6px);
+  z-index: 2147483647;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.wuyi-cal-lightbox-content {
+  background: #ffffff;
+  border-radius: 16px;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.35);
+  border: 1px solid #fda4af;
+}
+
+.wuyi-cal-lightbox-header {
+  padding: 12px 18px;
+  background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #fecdd3;
+}
+
+.wuyi-cal-lightbox-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #9f1239;
+}
+
+.wuyi-cal-lightbox-close {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  color: #9f1239;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.wuyi-cal-lightbox-close:hover {
+  background: #fecdd3;
+}
+
+.wuyi-cal-lightbox-body {
+  padding: 16px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+}
+
+#wuyiCalLightboxImg {
+  max-width: 100%;
+  max-height: calc(85vh - 70px);
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
