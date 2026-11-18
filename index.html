@@ -3322,8 +3322,11 @@ if (typeof module !== 'undefined' && module.exports) {
         // 移除檔案開頭單獨的日期標題列或「＝＝＝」分隔列，保留真正訂單內容
         const cleaned = rawChunk
           .replace(/\uFFFC/g, '')
-          .replace(/^(?:\d{4}年\d{1,2}月\d{1,2}日\s*,?\s*\n+|[,，＝=—\-_]{3,}\s*\n+)/g, '')
+          .replace(/^(?:\d{4}年\d{1,2}月\d{1,2}日\s*,?\s*\n+|[,，＝=—\-_]{1,}\s*\n*)+/g, '')
           .trim();
+        if (!cleaned || cleaned.replace(/[\s,，.。＝=—\-_]/g, '').length < 5) {
+          return null;
+        }
         const st = (window.Extractor && typeof window.Extractor.parseOrderText === 'function')
           ? window.Extractor.parseOrderText(cleaned)
           : { orderType: 'cake', pickup: {}, cake: {}, flower: {}, customer: {} };
@@ -3455,7 +3458,7 @@ if (typeof module !== 'undefined' && module.exports) {
                 }
               }
               const ord = await buildBatchOrderObj(rng.text, i, chunkImgs);
-              batchOrders.push(ord);
+              if (ord) batchOrders.push(ord);
             }
             renderBatchExtractedTray();
             await renderBatchPreviewGrid();
@@ -3826,7 +3829,7 @@ if (typeof module !== 'undefined' && module.exports) {
         batchOrders = [];
         for (let i = 0; i < chunks.length; i++) {
           const ord = await buildBatchOrderObj(chunks[i], i, []);
-          batchOrders.push(ord);
+          if (ord) batchOrders.push(ord);
         }
         await renderBatchPreviewGrid();
         showBatchStatus('info', `⚡ 已解析 ${batchOrders.length} 筆訂單，請先預覽下方小卡確認無誤再送出！`);
