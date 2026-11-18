@@ -230,35 +230,6 @@
       margin-bottom: 12px;
     }
 
-    .pickup-date-row {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-    }
-
-    .pickup-date-row input[type="text"] {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .btn-reschedule {
-      flex-shrink: 0;
-      padding: 9px 10px;
-      font-size: 12px;
-      white-space: nowrap;
-      border-color: #cbd5e1;
-      background: #f8fafc;
-      color: #475569;
-    }
-
-    .btn-reschedule.active {
-      background: #fef3c7;
-      border-color: #f59e0b;
-      color: #b45309;
-      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15);
-    }
-    }
-
     .field label {
       display: block;
       font-size: 11.5px;
@@ -395,6 +366,110 @@
     }
 
     .settings-drawer.open { display: block; }
+
+    input[type="password"] {
+      width: 100%;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--text);
+      background: #ffffff;
+      transition: border-color 0.15s;
+    }
+
+    input[type="password"]:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.1);
+    }
+
+    .mode-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+      background: #fff1f2;
+      padding: 5px;
+      border-radius: 12px;
+      border: 1.5px solid var(--border);
+    }
+
+    .mode-tab {
+      border: none;
+      background: transparent;
+      color: #881337;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 9px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .mode-tab:hover {
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .mode-tab.active {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(225, 29, 72, 0.22);
+    }
+
+    .screenshot-zone {
+      border: 2px dashed var(--border-strong);
+      border-radius: 14px;
+      padding: 18px 14px;
+      background: #fff9fa;
+      text-align: center;
+      margin-bottom: 12px;
+      transition: background 0.15s, border-color 0.15s;
+      cursor: pointer;
+    }
+
+    .screenshot-zone.dragover {
+      background: #ffe4e6;
+      border-color: var(--primary);
+    }
+
+    .screenshot-thumb {
+      max-width: 100%;
+      max-height: 220px;
+      border-radius: 10px;
+      border: 1.5px solid var(--border-strong);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      margin-top: 10px;
+    }
+
+    .ocr-badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #eff6ff;
+      color: #1e40af;
+      border: 1px solid #bfdbfe;
+    }
+
+    .ocr-badge.done {
+      background: var(--success-bg);
+      color: #166534;
+      border-color: #86efac;
+    }
+
+    .ocr-badge.warn {
+      background: var(--warn-bg);
+      color: #92400e;
+      border-color: #fcd34d;
+    }
   </style>
 </head>
 <body>
@@ -415,37 +490,81 @@
     </div>
 
     <div class="settings-drawer" id="settingsDrawer">
-      <div class="field">
+      <div class="field" style="margin-bottom: 12px;">
         <label>Google Apps Script Web App 網址（沿用現有 Code.gs 部署）</label>
         <div style="display: flex; gap: 8px;">
           <input type="text" id="inputWebhookUrl" placeholder="https://script.google.com/macros/s/.../exec">
           <button type="button" class="btn btn-soft" id="btnSaveWebhook">儲存</button>
         </div>
       </div>
+      <div class="field">
+        <label>Gemini API Key（選填：填入後「訂單截圖模式」將使用 Gemini AI 高準確率辨識；未填則自動使用免費內建 OCR）</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="password" id="inputGeminiKey" placeholder="AIzaSy...（可留空，僅儲存於本機瀏覽器）">
+          <button type="button" class="btn btn-soft" id="btnSaveGeminiKey">儲存</button>
+        </div>
+      </div>
     </div>
 
     <div class="grid">
-      <!-- 左欄：貼上記事本內容與解析欄位 -->
+      <!-- 左欄：貼上記事本內容 / 訂單截圖 與解析欄位 -->
       <div class="panel">
-        <div class="panel-title">
-          <span>1️⃣ 貼上記事本內容（支援直接 Cmd+V / Ctrl+V 貼上文字與圖片）</span>
+        <div class="mode-tabs" role="tablist">
+          <button type="button" class="mode-tab active" id="tabModeText" data-mode="text">📝 記事本文字模式</button>
+          <button type="button" class="mode-tab" id="tabModeScreenshot" data-mode="screenshot">📸 訂單截圖模式</button>
         </div>
 
-        <div class="paste-zone">
-          <div id="rawNoteInput" contenteditable="true" data-placeholder="請點這裡並按 Cmd+V（或 Ctrl+V）貼上複製的記事本內容（支援同時貼上文字與圖片）...&#10;&#10;💡 提示：從 LINE 記事本或 Apple 備忘錄複製後直接貼上，文字與圖片都會自動抓進來！"></div>
-          <div class="hint">支援自動識別多蛋糕/多花束、金額明細、日期格式（如 11/08、11.8、1108）與剪貼簿圖片。</div>
-        </div>
+        <div id="textModePanel">
+          <div class="panel-title">
+            <span>1️⃣ 貼上記事本內容（支援直接 Cmd+V / Ctrl+V 貼上文字與圖片）</span>
+          </div>
 
-        <div class="images-section" id="imageDropZone">
-          <div class="images-header">
-            <strong style="font-size: 13px; color: #881337;">🖼️ 附帶圖片（可拖曳圖片至此或直接貼上）</strong>
-            <div>
-              <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
-              <button type="button" class="btn" id="btnUploadImg" style="padding: 5px 10px; font-size: 12px;">＋ 選擇圖片</button>
+          <div class="paste-zone">
+            <div id="rawNoteInput" contenteditable="true" data-placeholder="請點這裡並按 Cmd+V（或 Ctrl+V）貼上複製的記事本內容（支援同時貼上文字與圖片）...&#10;&#10;💡 提示：從 LINE 記事本或 Apple 備忘錄複製後直接貼上，文字與圖片都會自動抓進來！"></div>
+            <div class="hint">支援自動識別多蛋糕/多花束、金額明細、日期格式（如 11/08、11.8、1108）與剪貼簿圖片。</div>
+          </div>
+
+          <div class="images-section" id="imageDropZone">
+            <div class="images-header">
+              <strong style="font-size: 13px; color: #881337;">🖼️ 附帶圖片（可拖曳圖片至此或直接貼上）</strong>
+              <div>
+                <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
+                <button type="button" class="btn" id="btnUploadImg" style="padding: 5px 10px; font-size: 12px;">＋ 選擇圖片</button>
+              </div>
+            </div>
+            <div class="images-list" id="imagesList">
+              <span class="hint" id="noImgHint">尚未加入圖片（若無圖片將產生純文字取貨小卡）</span>
             </div>
           </div>
-          <div class="images-list" id="imagesList">
-            <span class="hint" id="noImgHint">尚未加入圖片（若無圖片將產生純文字取貨小卡）</span>
+        </div>
+
+        <div id="screenshotModePanel" style="display: none;">
+          <div class="panel-title">
+            <span>1️⃣ 放入客人訂單截圖（自動辨識文字＋直接上傳原圖）</span>
+            <button type="button" class="btn" id="btnReOcr" style="padding: 4px 10px; font-size: 12px;" disabled>🔍 重新辨識</button>
+          </div>
+
+          <div class="screenshot-zone" id="screenshotDropZone">
+            <input type="file" id="screenshotFileInput" accept="image/*" style="display: none;">
+            <div id="screenshotEmptyHint">
+              <div style="font-size: 28px; margin-bottom: 6px;">📸</div>
+              <strong style="font-size: 13.5px; color: #881337;">點此選擇圖片、拖曳截圖至此，或直接按 Cmd+V / Ctrl+V 貼上截圖</strong>
+              <div class="hint">系統將自動辨識截圖中的訂單資訊填入下方欄位，並將此截圖依標準檔名直接上傳至 Google Drive！</div>
+            </div>
+            <div id="screenshotPreviewWrap" style="display: none;">
+              <img id="screenshotThumb" class="screenshot-thumb" alt="客人訂單截圖預覽">
+              <div>
+                <span class="ocr-badge" id="ocrStatusBadge">等待辨識...</span>
+              </div>
+              <div style="margin-top: 8px;">
+                <button type="button" class="btn" id="btnChangeScreenshot" style="padding: 4px 10px; font-size: 12px;">🔄 更換截圖</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field" style="margin-bottom: 12px;">
+            <label>📝 截圖辨識文字（可手動微調後點「⚡ 重新解析」）</label>
+            <textarea id="ocrRawText" rows="4" placeholder="放入截圖後，辨識出的訂單文字會顯示在這裡..."></textarea>
           </div>
         </div>
 
@@ -461,10 +580,7 @@
           </div>
           <div class="field">
             <label>取貨日期</label>
-            <div class="pickup-date-row">
-              <input type="text" id="fieldPickupDate" placeholder="2026/11/08">
-              <button type="button" class="btn btn-reschedule" id="btnReschedule" title="備註：這位客人已改過期">🔄 改期</button>
-            </div>
+            <input type="text" id="fieldPickupDate" placeholder="2026/11/08">
           </div>
           <div class="field">
             <label>取貨時間</label>
@@ -507,10 +623,10 @@
         </div>
       </div>
 
-      <!-- 右欄：小卡預覽與送出 -->
+      <!-- 右欄：小卡 / 截圖預覽與送出 -->
       <div class="panel">
         <div class="panel-title">
-          <span>3️⃣ 取貨確認小卡預覽 & 送出</span>
+          <span id="previewPanelTitle">3️⃣ 取貨確認小卡預覽 & 送出</span>
           <div style="display: flex; gap: 6px;">
             <button type="button" class="btn" id="btnRefreshCard" style="padding: 4px 10px; font-size: 12px;">🔄 更新預覽</button>
             <button type="button" class="btn" id="btnDownloadCard" style="padding: 4px 10px; font-size: 12px;">💾 下載圖檔</button>
@@ -1371,13 +1487,6 @@ const CardRenderer = {
           continue;
         }
 
-        // 改期備註高亮
-        if (/^備[註注][：:]\s*這位客人已改過期/.test(trimmed)) {
-          plan.push({ type: 'highlight_reschedule', text: trimmed, height: lineHeight + 12 });
-          totalH += lineHeight + 12;
-          continue;
-        }
-
         plan.push({ type: 'text', text: line, height: lineHeight });
         totalH += lineHeight;
       }
@@ -1496,20 +1605,6 @@ const CardRenderer = {
         this._drawRoundRect(ctx, paddingX - 4, curY + 1, bgW, bgH, 4, '#fae8ff');
 
         ctx.fillStyle = '#9333ea';
-        ctx.fillText(item.text, paddingX + 4, curY + 15);
-        curY += item.height;
-        continue;
-      }
-
-      // 改期備註高亮 (琥珀色螢光底框)
-      if (item.type === 'highlight_reschedule') {
-        ctx.font = fontBold;
-        const metrics = ctx.measureText(item.text);
-        const bgW = Math.min(contentW, metrics.width + 16);
-        const bgH = 28;
-        this._drawRoundRect(ctx, paddingX - 4, curY + 1, bgW, bgH, 4, '#fef3c7');
-
-        ctx.fillStyle = '#b45309';
         ctx.fillText(item.text, paddingX + 4, curY + 15);
         curY += item.height;
         continue;
@@ -1985,13 +2080,12 @@ if (typeof module !== 'undefined' && module.exports) {
       const DEFAULT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyWmZqHYc1THus_JRa54ZDsU3rRck4r4snh_7B3mzjjKXrNLIUTWmibCQQloiSXefL_kQ/exec';
       const DRIVE_FOLDER_ID = '1aFAvK33ML41x0JgHlCF6WcA6006Emq4J';
       const WEBHOOK_STORAGE_KEY = 'wuyi_note_sync_webhook_url';
+      const GEMINI_KEY_STORAGE_KEY = 'wuyi_gemini_api_key';
       const NUM_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
       const rawNoteInput = document.getElementById('rawNoteInput');
       const fieldDateTag = document.getElementById('fieldDateTag');
       const fieldPickupDate = document.getElementById('fieldPickupDate');
-      const btnReschedule = document.getElementById('btnReschedule');
-      const RESCHEDULE_NOTE = '備註：這位客人已改過期';
       const fieldPickupTime = document.getElementById('fieldPickupTime');
       const fieldLocation = document.getElementById('fieldLocation');
       const fieldLineName = document.getElementById('fieldLineName');
@@ -2009,9 +2103,29 @@ if (typeof module !== 'undefined' && module.exports) {
       const statusBox = document.getElementById('statusBox');
       const btnSendAll = document.getElementById('btnSendAll');
       const inputWebhookUrl = document.getElementById('inputWebhookUrl');
+      const inputGeminiKey = document.getElementById('inputGeminiKey');
       const settingsDrawer = document.getElementById('settingsDrawer');
 
+      const tabModeText = document.getElementById('tabModeText');
+      const tabModeScreenshot = document.getElementById('tabModeScreenshot');
+      const textModePanel = document.getElementById('textModePanel');
+      const screenshotModePanel = document.getElementById('screenshotModePanel');
+      const screenshotDropZone = document.getElementById('screenshotDropZone');
+      const screenshotFileInput = document.getElementById('screenshotFileInput');
+      const screenshotEmptyHint = document.getElementById('screenshotEmptyHint');
+      const screenshotPreviewWrap = document.getElementById('screenshotPreviewWrap');
+      const screenshotThumb = document.getElementById('screenshotThumb');
+      const ocrStatusBadge = document.getElementById('ocrStatusBadge');
+      const btnReOcr = document.getElementById('btnReOcr');
+      const btnChangeScreenshot = document.getElementById('btnChangeScreenshot');
+      const ocrRawText = document.getElementById('ocrRawText');
+      const previewPanelTitle = document.getElementById('previewPanelTitle');
+
+      let currentMode = 'text'; // 'text' | 'screenshot'
       let uploadedImages = []; // { id, dataUrl, category: 'cake' | 'flower' | 'addon' }
+      let screenshotRawDataUrl = null;
+      let screenshotPngDataUrl = null;
+      let tesseractWorker = null;
       let parsedState = (window.Extractor && typeof window.Extractor._createEmptyOrderState === 'function')
         ? window.Extractor._createEmptyOrderState()
         : {
@@ -2028,7 +2142,27 @@ if (typeof module !== 'undefined' && module.exports) {
         return (localStorage.getItem(WEBHOOK_STORAGE_KEY) || DEFAULT_WEBHOOK_URL).trim();
       }
 
+      function getGeminiApiKey() {
+        return (localStorage.getItem(GEMINI_KEY_STORAGE_KEY) || '').trim();
+      }
+
       inputWebhookUrl.value = getWebhookUrl();
+      inputGeminiKey.value = getGeminiApiKey();
+
+      function switchMode(mode) {
+        currentMode = mode === 'screenshot' ? 'screenshot' : 'text';
+        tabModeText.classList.toggle('active', currentMode === 'text');
+        tabModeScreenshot.classList.toggle('active', currentMode === 'screenshot');
+        textModePanel.style.display = currentMode === 'text' ? 'block' : 'none';
+        screenshotModePanel.style.display = currentMode === 'screenshot' ? 'block' : 'none';
+        previewPanelTitle.textContent = currentMode === 'screenshot'
+          ? '3️⃣ 客人訂單截圖預覽 & 送出（上傳原圖）'
+          : '3️⃣ 取貨確認小卡預覽 & 送出';
+        refreshCardPreview();
+      }
+
+      tabModeText.addEventListener('click', () => switchMode('text'));
+      tabModeScreenshot.addEventListener('click', () => switchMode('screenshot'));
 
       function showStatus(type, html) {
         statusBox.className = `status-box show ${type}`;
@@ -2142,58 +2276,15 @@ if (typeof module !== 'undefined' && module.exports) {
         rawNoteInput.innerText = txt || '';
       }
 
-      function convertDataUrlToPngIfNeeded(dataUrl) {
-        if (!dataUrl || !dataUrl.startsWith('data:image/tiff')) {
-          return Promise.resolve(dataUrl);
-        }
-        return new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            try {
-              const c = document.createElement('canvas');
-              c.width = img.naturalWidth || img.width;
-              c.height = img.naturalHeight || img.height;
-              const ctx = c.getContext('2d');
-              ctx.drawImage(img, 0, 0);
-              resolve(c.toDataURL('image/png'));
-            } catch (_) {
-              resolve(dataUrl);
-            }
-          };
-          img.onerror = () => resolve(dataUrl);
-          img.src = dataUrl;
-        });
-      }
-
-      async function normalizeImageSrc(src) {
-        if (!src) return null;
-        if (src.startsWith('blob:')) {
-          try {
-            const res = await fetch(src);
-            const blob = await res.blob();
-            const dataUrl = await readBlobAsDataUrl(blob);
-            return await convertDataUrlToPngIfNeeded(dataUrl);
-          } catch (_) {
-            return src;
-          }
-        }
-        if (src.startsWith('data:image/tiff')) {
-          return await convertDataUrlToPngIfNeeded(src);
-        }
-        return src;
-      }
-
-      async function addImageDataUrl(src) {
+      function addImageDataUrl(src) {
         if (!src) return;
         const isAllowed = src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:');
         if (!isAllowed) return;
-        const normalized = await normalizeImageSrc(src);
-        if (!normalized) return;
-        if (uploadedImages.some(x => x.dataUrl === normalized)) return;
+        if (uploadedImages.some(x => x.dataUrl === src)) return;
         const defaultCat = (fieldFlowerText.value.trim() && !fieldCakeText.value.trim()) ? 'flower' : 'cake';
         uploadedImages.push({
           id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          dataUrl: normalized,
+          dataUrl: src,
           category: defaultCat
         });
         renderImagesList();
@@ -2233,9 +2324,8 @@ if (typeof module !== 'undefined' && module.exports) {
         return '0';
       }
 
-      function parseNoteContent() {
-        const raw = getNotePlainText();
-        if (!raw) return;
+      function parseTextIntoFields(raw) {
+        if (!raw || !raw.trim()) return;
         const text = raw.replace(/\uFFFC/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
         if (window.Extractor && typeof window.Extractor.parseOrderText === 'function') {
@@ -2264,8 +2354,22 @@ if (typeof module !== 'undefined' && module.exports) {
         fieldFlowerText.value = flowerTxt;
         fieldPricingText.value = extractPricingFromText(text);
 
-        syncRescheduleButton();
         refreshCardPreview();
+      }
+
+      function parseNoteContent() {
+        if (currentMode === 'screenshot') {
+          parseTextIntoFields(ocrRawText.value);
+        } else {
+          parseTextIntoFields(getNotePlainText());
+        }
+      }
+
+      function getActiveRawText() {
+        if (currentMode === 'screenshot') {
+          return (ocrRawText.value || '').trim();
+        }
+        return getNotePlainText();
       }
 
       function syncFieldsToState() {
@@ -2296,7 +2400,7 @@ if (typeof module !== 'undefined' && module.exports) {
         else if (hasFlower) parsedState.orderType = 'flower';
         else parsedState.orderType = 'cake';
 
-        parsedState.rawText = getNotePlainText();
+        parsedState.rawText = getActiveRawText();
         return parsedState;
       }
 
@@ -2313,7 +2417,7 @@ if (typeof module !== 'undefined' && module.exports) {
           items.push({ type: 'cake', text: fieldCakeText.value.trim(), images: cakeImgs, addonImages: addonImgs });
         }
         if (items.length === 0) {
-          items.push({ type: 'cake', text: getNotePlainText(), images: cakeImgs, addonImages: addonImgs });
+          items.push({ type: 'cake', text: getActiveRawText(), images: cakeImgs, addonImages: addonImgs });
         }
         return items;
       }
@@ -2324,6 +2428,20 @@ if (typeof module !== 'undefined' && module.exports) {
         const lineName = (parsedState.customer.lineName || parsedState.customer.name || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
         const filename = buildCardFilename(dateTagVal, parsedState.pickup.time, lineName);
         filenameBadge.textContent = `檔名：${filename}`;
+
+        if (currentMode === 'screenshot') {
+          const previewSrc = screenshotPngDataUrl || screenshotRawDataUrl;
+          if (!previewSrc) {
+            previewBox.innerHTML = '<span class="hint">放入客人訂單截圖後，將自動在此顯示即將上傳至 Google Drive 的原圖預覽</span>';
+            return;
+          }
+          previewBox.innerHTML = '';
+          const img = document.createElement('img');
+          img.src = previewSrc;
+          img.alt = filename;
+          previewBox.appendChild(img);
+          return;
+        }
 
         if (!window.CardRenderer || typeof window.CardRenderer.renderCard !== 'function') {
           previewBox.innerHTML = '<span class="hint">小卡渲染引擎載入失敗，請確認 ../src/content/card-renderer.js 路徑</span>';
@@ -2353,13 +2471,203 @@ if (typeof module !== 'undefined' && module.exports) {
         }
       }
 
+      function convertDataUrlToPngDataUrl(dataUrl) {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth || img.width || 800;
+              canvas.height = img.naturalHeight || img.height || 800;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+              resolve(canvas.toDataURL('image/png'));
+            } catch (_) {
+              resolve(dataUrl);
+            }
+          };
+          img.onerror = () => resolve(dataUrl);
+          img.src = dataUrl;
+        });
+      }
+
+      function setOcrBadge(stateClass, text) {
+        ocrStatusBadge.className = 'ocr-badge' + (stateClass ? ` ${stateClass}` : '');
+        ocrStatusBadge.textContent = text;
+      }
+
+      function cleanOcrChineseSpacing(text) {
+        if (!text) return '';
+        let cleaned = text.replace(/\r\n/g, '\n');
+        // 移除中文之間多餘空格（連續兩次處理 3 字以上）
+        cleaned = cleaned.replace(/([\u4e00-\u9fff])\s+([\u4e00-\u9fff])/g, '$1$2');
+        cleaned = cleaned.replace(/([\u4e00-\u9fff])\s+([\u4e00-\u9fff])/g, '$1$2');
+        cleaned = cleaned.replace(/([\u4e00-\u9fff])\s*([：:])\s*/g, '$1：');
+        return cleaned.trim();
+      }
+
+      function loadTesseractScript() {
+        if (window.Tesseract) return Promise.resolve(window.Tesseract);
+        return new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+          script.onload = () => resolve(window.Tesseract);
+          script.onerror = () => reject(new Error('無法載入 OCR 引擎 (Tesseract.js)'));
+          document.head.appendChild(script);
+        });
+      }
+
+      async function recognizeWithGemini(dataUrl, apiKey) {
+        const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+        if (!match) throw new Error('圖片格式不支援');
+        const mimeType = match[1];
+        const base64Data = match[2];
+
+        const prompt = `請仔細辨識這張「梧藝 WUYI 甜點花藝」客人訂單截圖中的所有文字內容。
+請盡可能完整、逐字保留原本的格式、換行與 emoji（例如 🍔、1️⃣、2️⃣、💐、🎂、♡），並回傳 JSON 格式：
+{
+  "rawText": "圖片中完整的訂單文字逐字稿（含取貨日期、取貨時間、自取地點、訂購人LINE名稱、訂購人姓名、訂購人電話、蛋糕或花束明細、金額明細）",
+  "dateTag": "4碼月日，例如 1129",
+  "pickupDate": "YYYY-MM-DD 格式，若圖中僅有月日請預設年份 2026，例如 2026-11-29",
+  "pickupTime": "取貨時間，例如 15:00 或 2:30",
+  "location": "取貨地點，例如 台南市中西區友愛街93號",
+  "lineName": "訂購人 LINE 名稱",
+  "customerName": "訂購人姓名",
+  "customerPhone": "訂購人電話",
+  "cakeText": "蛋糕相關明細（若無蛋糕請留空字串）",
+  "flowerText": "花束相關明細（若無花束請留空字串）",
+  "pricingText": "金額加總明細"
+}`;
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mimeType, data: base64Data } }
+              ]
+            }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.1
+            }
+          })
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`Gemini API 錯誤 (${res.status}): ${errText.slice(0, 120)}`);
+        }
+
+        const data = await res.json();
+        const rawJsonStr = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const parsed = JSON.parse(rawJsonStr);
+        return parsed;
+      }
+
+      async function recognizeWithTesseract(dataUrl) {
+        setOcrBadge('', '⏳ 正在載入免費 OCR 引擎...');
+        const Tesseract = await loadTesseractScript();
+        if (!tesseractWorker) {
+          tesseractWorker = await Tesseract.createWorker('chi_tra+eng', 1, {
+            logger: (m) => {
+              if (m && m.status === 'recognizing text') {
+                const pct = Math.round((m.progress || 0) * 100);
+                setOcrBadge('', `⏳ 免費 OCR 辨識中... ${pct}%`);
+              }
+            }
+          });
+        }
+        setOcrBadge('', '⏳ 免費 OCR 辨識中...');
+        const result = await tesseractWorker.recognize(dataUrl);
+        return cleanOcrChineseSpacing((result && result.data && result.data.text) || '');
+      }
+
+      function applyGeminiFallbackFields(g) {
+        if (!g || typeof g !== 'object') return;
+        if (!fieldDateTag.value.trim() && g.dateTag) fieldDateTag.value = g.dateTag;
+        if (!fieldPickupDate.value.trim() && g.pickupDate) fieldPickupDate.value = g.pickupDate;
+        if (!fieldPickupTime.value.trim() && g.pickupTime) fieldPickupTime.value = g.pickupTime;
+        if (!fieldLocation.value.trim() && g.location) fieldLocation.value = g.location;
+        if (!fieldLineName.value.trim() && g.lineName) fieldLineName.value = g.lineName;
+        if (!fieldCustomerName.value.trim() && g.customerName) fieldCustomerName.value = g.customerName;
+        if (!fieldPhone.value.trim() && g.customerPhone) fieldPhone.value = g.customerPhone;
+        if (!fieldCakeText.value.trim() && g.cakeText) fieldCakeText.value = g.cakeText;
+        if (!fieldFlowerText.value.trim() && g.flowerText) fieldFlowerText.value = g.flowerText;
+        if (!fieldPricingText.value.trim() && g.pricingText) fieldPricingText.value = g.pricingText;
+        if (!fieldDateTag.value.trim() && fieldPickupDate.value.trim()) {
+          fieldDateTag.value = inferDateTag(fieldPickupDate.value.trim());
+        }
+        refreshCardPreview();
+      }
+
+      async function recognizeOrderScreenshot(dataUrl) {
+        if (!dataUrl) return;
+        btnReOcr.disabled = true;
+        const apiKey = getGeminiApiKey();
+
+        try {
+          if (apiKey) {
+            setOcrBadge('', '⏳ 正在使用 Gemini AI 辨識截圖...');
+            try {
+              const gResult = await recognizeWithGemini(dataUrl, apiKey);
+              const rawTxt = (gResult && gResult.rawText) ? gResult.rawText.trim() : '';
+              ocrRawText.value = rawTxt;
+              if (rawTxt) {
+                parseTextIntoFields(rawTxt);
+              }
+              applyGeminiFallbackFields(gResult);
+              setOcrBadge('done', '✅ Gemini AI 辨識完成');
+              showStatus('success', '📸 已使用 <strong>Gemini AI</strong> 完成截圖辨識與欄位解析！請確認右側預覽與下方欄位無誤後送出。');
+              return;
+            } catch (geminiErr) {
+              console.warn('Gemini 辨識失敗，改用免費內建 OCR:', geminiErr);
+              showStatus('warn', `⚠️ Gemini AI 辨識失敗（${geminiErr.message}），已自動切換為免費內建 OCR...`);
+            }
+          }
+
+          const ocrText = await recognizeWithTesseract(dataUrl);
+          ocrRawText.value = ocrText;
+          if (ocrText) {
+            parseTextIntoFields(ocrText);
+            setOcrBadge('done', '✅ 免費 OCR 辨識完成（建議核對文字）');
+            showStatus('info', '📸 已使用 <strong>免費內建 OCR</strong> 完成辨識！建議稍微核對電話/姓名等欄位（或於「⚙️ 網址設定」填入 Gemini API Key 提升準確率）。');
+          } else {
+            setOcrBadge('warn', '⚠️ 未偵測到文字，請手動填寫下方欄位');
+            showStatus('warn', '⚠️ 截圖中未辨識出文字，您仍可直接手動填寫下方欄位並送出截圖！');
+          }
+        } catch (err) {
+          setOcrBadge('warn', `⚠️ 辨識失敗：${err.message}`);
+          showStatus('error', `❌ 截圖辨識失敗：${err.message}`);
+        } finally {
+          btnReOcr.disabled = false;
+        }
+      }
+
+      async function setScreenshotImage(dataUrl) {
+        if (!dataUrl) return;
+        screenshotRawDataUrl = dataUrl;
+        screenshotThumb.src = dataUrl;
+        screenshotEmptyHint.style.display = 'none';
+        screenshotPreviewWrap.style.display = 'block';
+        btnReOcr.disabled = false;
+        setOcrBadge('', '⏳ 正在轉換圖片格式並準備辨識...');
+
+        screenshotPngDataUrl = await convertDataUrlToPngDataUrl(dataUrl);
+        refreshCardPreview();
+        await recognizeOrderScreenshot(screenshotPngDataUrl || dataUrl);
+      }
+
       function extractImagesFromHtml(html) {
         if (!html) return { valid: [], blocked: [] };
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const valid = [];
         const blocked = [];
         for (const img of Array.from(doc.querySelectorAll('img'))) {
-          const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+          const src = img.getAttribute('src') || '';
           if (!src) continue;
           if (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')) {
             valid.push(src);
@@ -2370,73 +2678,14 @@ if (typeof module !== 'undefined' && module.exports) {
         return { valid, blocked };
       }
 
-      function extractImagesFromRtf(rtf) {
-        if (!rtf || typeof rtf !== 'string' || !rtf.includes('\\pict')) return [];
-        const blobs = [];
-        let searchFrom = 0;
-        while (true) {
-          const idx = rtf.indexOf('{\\pict', searchFrom);
-          if (idx === -1) break;
-          let depth = 0;
-          let end = idx;
-          for (; end < rtf.length; end++) {
-            const ch = rtf[end];
-            if (ch === '{') depth++;
-            else if (ch === '}') {
-              depth--;
-              if (depth === 0) {
-                end++;
-                break;
-              }
-            }
-          }
-          const block = rtf.slice(idx, end);
-          searchFrom = end;
-
-          let mime = '';
-          if (/\\pngblip\b/.test(block)) mime = 'image/png';
-          else if (/\\jpegblip\b/.test(block)) mime = 'image/jpeg';
-
-          // 移除巢狀群組 (如 {\*\picprop ...}) 與 RTF 控制字元，保留十六進位資料
-          let stripped = '';
-          let subDepth = 0;
-          for (let i = 1; i < block.length - 1; i++) {
-            const c = block[i];
-            if (c === '{') { subDepth++; continue; }
-            if (c === '}') { if (subDepth > 0) subDepth--; continue; }
-            if (subDepth === 0) stripped += c;
-          }
-          stripped = stripped.replace(/\\[a-zA-Z]+-?\d*\s?/g, '');
-          const hex = stripped.replace(/[^0-9a-fA-F]/g, '');
-          if (hex.length < 32) continue;
-
-          if (!mime) {
-            const head = hex.slice(0, 8).toLowerCase();
-            if (head.startsWith('89504e47')) mime = 'image/png';
-            else if (head.startsWith('ffd8ff')) mime = 'image/jpeg';
-            else if (head.startsWith('47494638')) mime = 'image/gif';
-            else if (head.startsWith('52494646')) mime = 'image/webp';
-            else continue;
-          }
-
-          const byteLen = Math.floor(hex.length / 2);
-          const bytes = new Uint8Array(byteLen);
-          for (let i = 0; i < byteLen; i++) {
-            bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-          }
-          blobs.push(new Blob([bytes], { type: mime }));
-        }
-        return blobs;
-      }
-
-      async function scanNoteDomForImages() {
+      function scanNoteDomForImages() {
         const domImgs = Array.from(rawNoteInput.querySelectorAll('img'));
         const blocked = [];
         for (const imgEl of domImgs) {
-          const src = imgEl.getAttribute('src') || imgEl.currentSrc || '';
+          const src = imgEl.getAttribute('src') || '';
           if (!src) continue;
           if (src.startsWith('data:image') || src.startsWith('https://') || src.startsWith('http://') || src.startsWith('blob:')) {
-            await addImageDataUrl(src);
+            addImageDataUrl(src);
           } else {
             blocked.push(src);
           }
@@ -2451,17 +2700,14 @@ if (typeof module !== 'undefined' && module.exports) {
         // 1. 必須在任何 await 之前同步讀取所有剪貼簿資料，否則瀏覽器會清空 clipboardData！
         const plain = cd.getData('text/plain') || '';
         const html = cd.getData('text/html') || '';
-        const rtf = cd.getData('text/rtf') || '';
-        const clipTypes = Array.from(cd.types || []);
         const { valid: htmlImgSrcs, blocked: htmlBlockedSrcs } = extractImagesFromHtml(html);
-        const rtfImageBlobs = extractImagesFromRtf(rtf);
 
         const imageBlobs = [];
         if (cd.items) {
           for (const item of Array.from(cd.items)) {
             if (item.kind === 'file' || (item.type && item.type.startsWith('image/'))) {
               const f = item.getAsFile();
-              if (f && (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|tiff?|heic)$/i.test(f.name || ''))) {
+              if (f && (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name || ''))) {
                 imageBlobs.push(f);
               }
             }
@@ -2469,58 +2715,63 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         if (imageBlobs.length === 0 && cd.files && cd.files.length > 0) {
           for (const f of Array.from(cd.files)) {
-            if (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|tiff?|heic)$/i.test(f.name || '')) {
+            if (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name || '')) {
               imageBlobs.push(f);
             }
+          }
+        }
+
+        // 若目前在「訂單截圖模式」且剪貼簿有圖片，直接放入訂單截圖並辨識
+        if (currentMode === 'screenshot') {
+          if (imageBlobs.length > 0) {
+            e.preventDefault();
+            const dataUrl = await readBlobAsDataUrl(imageBlobs[0]);
+            await setScreenshotImage(dataUrl);
+            return;
+          }
+          if (htmlImgSrcs.length > 0) {
+            e.preventDefault();
+            await setScreenshotImage(htmlImgSrcs[0]);
+            return;
           }
         }
 
         const isInsideNoteBox = (e.target === rawNoteInput || rawNoteInput.contains(e.target));
         const isOtherInput = !isInsideNoteBox && (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
 
-        // 若游標不在記事本框內，直接以純文字貼入 rawNoteInput；
-        // 若游標在 rawNoteInput 內，不清除選取範圍也不阻擋原生貼上（讓 Safari / Chrome 把 Pages / 備忘錄圖片轉成 DOM <img>），
-        // 待掃描完圖片後再把 rawNoteInput 整理為乾淨純文字。
-        if (!isInsideNoteBox && !isOtherInput && plain.trim()) {
+        // 保持原本格式且不帶粗體/多餘 HTML 樣式：若有純文字就直接以純文字貼入 rawNoteInput
+        if (!isOtherInput && plain.trim()) {
           e.preventDefault();
           const cleanPlain = plain.replace(/\uFFFC/g, '').replace(/\r\n/g, '\n');
           setNotePlainText(cleanPlain);
           rawNoteInput.focus();
         }
 
-        // 2. 處理圖片 blobs（含剪貼簿圖片檔案與 RTF 內嵌圖片）
-        for (const blob of [...imageBlobs, ...rtfImageBlobs]) {
+        // 2. 處理圖片 blobs
+        for (const blob of imageBlobs) {
           const dataUrl = await readBlobAsDataUrl(blob);
-          await addImageDataUrl(dataUrl);
+          addImageDataUrl(dataUrl);
         }
 
-        // 3. 處理 HTML 內含圖片（例如 LINE 記事本 / Pages 複製出的 <img>）
-        if (htmlImgSrcs.length > 0 && (imageBlobs.length === 0 || htmlImgSrcs.length > imageBlobs.length)) {
+        // 3. 處理 HTML 內含圖片（例如 LINE 記事本複製出的 <img src="https://...">）
+        if (imageBlobs.length === 0 && htmlImgSrcs.length > 0) {
           for (const src of htmlImgSrcs) {
-            await addImageDataUrl(src);
+            addImageDataUrl(src);
           }
         }
 
-        // 4. 等待 contenteditable 原生貼上完成後，再掃描 DOM 內的圖片、整理純文字並解析
-        setTimeout(async () => {
-          const domBlocked = await scanNoteDomForImages();
-          if (isInsideNoteBox) {
-            const cleanText = (plain || getNotePlainText()).replace(/\uFFFC/g, '').replace(/\r\n/g, '\n').trim();
-            if (cleanText) {
-              setNotePlainText(cleanText);
-            } else {
-              rawNoteInput.innerHTML = '';
-            }
-          }
+        // 4. 等待 contenteditable 原生貼上完成後，再掃描 DOM 內的圖片並解析文字
+        setTimeout(() => {
+          const domBlocked = scanNoteDomForImages();
           parseNoteContent();
           const txtLen = getNotePlainText().length;
           const totalBlocked = htmlBlockedSrcs.length + domBlocked.length;
           if (totalBlocked > 0 && uploadedImages.length === 0) {
-            showStatus('warn', `📋 已貼上文字（${txtLen} 字），但瀏覽器安全性阻擋了本機圖片路徑（剪貼簿格式：${clipTypes.join(', ')}）。<br>👉 請在 Pages 裡單獨點圖片按 <strong>Cmd+C</strong> 再貼上，或直接把圖片<strong>拖曳</strong>到「🖼️ 附帶圖片」框！`);
+            showStatus('warn', `📋 已貼上文字（${txtLen} 字），但偵測到 Mac 備忘錄本機圖片路徑（瀏覽器安全限制無法直接讀取）。<br>👉 請直接把圖片<strong>拖曳</strong>到「🖼️ 附帶圖片」框，或對圖片按右鍵「<strong>拷貝影像</strong>」再貼上！`);
           } else if (txtLen > 0 || uploadedImages.length > 0) {
             showStatus('info', `📋 已貼上記事本內容！（文字 ${txtLen} 字、圖片 ${uploadedImages.length} 張）`);
           }
-        }, 120);
+        }, 60);
       }
 
       document.addEventListener('paste', handlePasteEvent);
@@ -2528,6 +2779,12 @@ if (typeof module !== 'undefined' && module.exports) {
       rawNoteInput.addEventListener('input', () => {
         scanNoteDomForImages();
         parseNoteContent();
+      });
+
+      ocrRawText.addEventListener('input', () => {
+        if (currentMode === 'screenshot') {
+          parseTextIntoFields(ocrRawText.value);
+        }
       });
 
       [fieldDateTag, fieldPickupDate, fieldPickupTime, fieldLocation, fieldLineName, fieldCustomerName, fieldPhone, fieldCakeText, fieldFlowerText, fieldPricingText].forEach((el) => {
@@ -2541,26 +2798,43 @@ if (typeof module !== 'undefined' && module.exports) {
             let gotAny = false;
             for (const clipItem of items) {
               for (const type of clipItem.types) {
-                if (type === 'text/plain') {
-                  const blob = await clipItem.getType(type);
-                  const txt = await blob.text();
-                  if (txt.trim()) {
-                    setNotePlainText(txt);
+                if (currentMode === 'screenshot') {
+                  if (type.startsWith('image/')) {
+                    const blob = await clipItem.getType(type);
+                    const dataUrl = await readBlobAsDataUrl(blob);
+                    await setScreenshotImage(dataUrl);
+                    return;
+                  } else if (type === 'text/html') {
+                    const blob = await clipItem.getType(type);
+                    const htmlTxt = await blob.text();
+                    const { valid: srcs } = extractImagesFromHtml(htmlTxt);
+                    if (srcs.length > 0) {
+                      await setScreenshotImage(srcs[0]);
+                      return;
+                    }
+                  }
+                } else {
+                  if (type === 'text/plain') {
+                    const blob = await clipItem.getType(type);
+                    const txt = await blob.text();
+                    if (txt.trim()) {
+                      setNotePlainText(txt);
+                      gotAny = true;
+                    }
+                  } else if (type === 'text/html') {
+                    const blob = await clipItem.getType(type);
+                    const htmlTxt = await blob.text();
+                    const { valid: srcs } = extractImagesFromHtml(htmlTxt);
+                    for (const src of srcs) {
+                      addImageDataUrl(src);
+                      gotAny = true;
+                    }
+                  } else if (type.startsWith('image/')) {
+                    const blob = await clipItem.getType(type);
+                    const dataUrl = await readBlobAsDataUrl(blob);
+                    addImageDataUrl(dataUrl);
                     gotAny = true;
                   }
-                } else if (type === 'text/html') {
-                  const blob = await clipItem.getType(type);
-                  const htmlTxt = await blob.text();
-                  const { valid: srcs } = extractImagesFromHtml(htmlTxt);
-                  for (const src of srcs) {
-                    await addImageDataUrl(src);
-                    gotAny = true;
-                  }
-                } else if (type.startsWith('image/')) {
-                  const blob = await clipItem.getType(type);
-                  const dataUrl = await readBlobAsDataUrl(blob);
-                  await addImageDataUrl(dataUrl);
-                  gotAny = true;
                 }
               }
             }
@@ -2570,7 +2844,7 @@ if (typeof module !== 'undefined' && module.exports) {
               return;
             }
           }
-          if (navigator.clipboard && navigator.clipboard.readText) {
+          if (currentMode === 'text' && navigator.clipboard && navigator.clipboard.readText) {
             const txt = await navigator.clipboard.readText();
             if (txt && txt.trim()) {
               setNotePlainText(txt);
@@ -2579,9 +2853,11 @@ if (typeof module !== 'undefined' && module.exports) {
               return;
             }
           }
-          showStatus('warn', '⚠️ 剪貼簿目前沒有文字或圖片，請點一下上方輸入框再按 Cmd+V 貼上。');
+          showStatus('warn', currentMode === 'screenshot'
+            ? '⚠️ 剪貼簿目前沒有圖片，請複製客人截圖後再按 Cmd+V 貼上或點擊上傳框選擇圖片。'
+            : '⚠️ 剪貼簿目前沒有文字或圖片，請點一下上方輸入框再按 Cmd+V 貼上。');
         } catch (err) {
-          showStatus('warn', `⚠️ 無法自動讀取剪貼簿（${err.message}），請點一下上方輸入框再按 Cmd+V / Ctrl+V 貼上！`);
+          showStatus('warn', `⚠️ 無法自動讀取剪貼簿（${err.message}），請直接按 Cmd+V / Ctrl+V 貼上！`);
         }
       });
 
@@ -2614,6 +2890,44 @@ if (typeof module !== 'undefined' && module.exports) {
         }
       });
 
+      // 📸 訂單截圖模式：點擊、拖曳、更換、重新辨識
+      screenshotDropZone.addEventListener('click', (e) => {
+        if (e.target === btnChangeScreenshot) return;
+        screenshotFileInput.click();
+      });
+      btnChangeScreenshot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        screenshotFileInput.click();
+      });
+      screenshotFileInput.addEventListener('change', async (e) => {
+        const file = (e.target.files || [])[0];
+        if (file && file.type.startsWith('image/')) {
+          const dataUrl = await readBlobAsDataUrl(file);
+          await setScreenshotImage(dataUrl);
+        }
+        screenshotFileInput.value = '';
+      });
+      screenshotDropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        screenshotDropZone.classList.add('dragover');
+      });
+      screenshotDropZone.addEventListener('dragleave', () => {
+        screenshotDropZone.classList.remove('dragover');
+      });
+      screenshotDropZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        screenshotDropZone.classList.remove('dragover');
+        const file = Array.from(e.dataTransfer.files || []).find(f => f.type.startsWith('image/'));
+        if (file) {
+          const dataUrl = await readBlobAsDataUrl(file);
+          await setScreenshotImage(dataUrl);
+        }
+      });
+      btnReOcr.addEventListener('click', async () => {
+        const src = screenshotPngDataUrl || screenshotRawDataUrl;
+        if (src) await recognizeOrderScreenshot(src);
+      });
+
       document.getElementById('btnToggleSettings').addEventListener('click', () => {
         settingsDrawer.classList.toggle('open');
       });
@@ -2629,36 +2943,20 @@ if (typeof module !== 'undefined' && module.exports) {
         showStatus('success', '✅ Apps Script 網址已儲存！');
       });
 
-      function hasRescheduleNote() {
-        return /這位客人已改過期/.test(fieldCakeText.value) || /這位客人已改過期/.test(fieldFlowerText.value);
-      }
-
-      function syncRescheduleButton() {
-        const active = hasRescheduleNote();
-        btnReschedule.classList.toggle('active', active);
-        btnReschedule.textContent = active ? '✓ 已改期' : '🔄 改期';
-      }
-
-      btnReschedule.addEventListener('click', () => {
-        const isActive = hasRescheduleNote();
-        if (isActive) {
-          const stripRe = /\n?^\s*備[註注][：:]\s*這位客人已改過期\s*$/gm;
-          fieldCakeText.value = fieldCakeText.value.replace(stripRe, '').trim();
-          fieldFlowerText.value = fieldFlowerText.value.replace(stripRe, '').trim();
+      document.getElementById('btnSaveGeminiKey').addEventListener('click', () => {
+        const key = inputGeminiKey.value.trim();
+        if (!key) {
+          localStorage.removeItem(GEMINI_KEY_STORAGE_KEY);
+          showStatus('info', 'ℹ️ 已清除 Gemini API Key，將使用免費內建 OCR 辨識截圖。');
         } else {
-          const target = (fieldCakeText.value.trim() || !fieldFlowerText.value.trim()) ? fieldCakeText : fieldFlowerText;
-          target.value = target.value.trim() ? `${target.value.trim()}\n${RESCHEDULE_NOTE}` : RESCHEDULE_NOTE;
+          localStorage.setItem(GEMINI_KEY_STORAGE_KEY, key);
+          showStatus('success', '✅ Gemini API Key 已儲存！截圖辨識將優先使用 Gemini AI。');
         }
-        syncRescheduleButton();
-        refreshCardPreview();
-      });
-
-      [fieldCakeText, fieldFlowerText].forEach((el) => {
-        el.addEventListener('input', syncRescheduleButton);
       });
 
       document.getElementById('btnClearAll').addEventListener('click', () => {
         rawNoteInput.innerHTML = '';
+        ocrRawText.value = '';
         fieldDateTag.value = '';
         fieldPickupDate.value = '';
         fieldPickupTime.value = '';
@@ -2671,9 +2969,17 @@ if (typeof module !== 'undefined' && module.exports) {
         fieldPricingText.value = '';
         uploadedImages = [];
         currentCanvas = null;
-        syncRescheduleButton();
+        screenshotRawDataUrl = null;
+        screenshotPngDataUrl = null;
+        screenshotThumb.src = '';
+        screenshotPreviewWrap.style.display = 'none';
+        screenshotEmptyHint.style.display = 'block';
+        btnReOcr.disabled = true;
+        setOcrBadge('', '等待辨識...');
         renderImagesList();
-        previewBox.innerHTML = '<span class="hint">貼上記事本內容後，將自動在此產生取貨確認小卡預覽</span>';
+        previewBox.innerHTML = currentMode === 'screenshot'
+          ? '<span class="hint">放入客人訂單截圖後，將自動在此顯示即將上傳至 Google Drive 的原圖預覽</span>'
+          : '<span class="hint">貼上記事本內容後，將自動在此產生取貨確認小卡預覽</span>';
         filenameBadge.textContent = '檔名：未指定日期 客戶.png';
         statusBox.className = 'status-box';
       });
@@ -2682,11 +2988,28 @@ if (typeof module !== 'undefined' && module.exports) {
       document.getElementById('btnRefreshCard').addEventListener('click', refreshCardPreview);
 
       document.getElementById('btnDownloadCard').addEventListener('click', async () => {
-        if (!currentCanvas) await refreshCardPreview();
-        if (!currentCanvas) return;
+        syncFieldsToState();
         const dateTagVal = parsedState.pickup.dateTag || inferDateTag(parsedState.pickup.date);
         const lineName = (parsedState.customer.lineName || parsedState.customer.name || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
         const filename = buildCardFilename(dateTagVal, parsedState.pickup.time, lineName);
+
+        if (currentMode === 'screenshot') {
+          const src = screenshotPngDataUrl || screenshotRawDataUrl;
+          if (!src) {
+            showStatus('warn', '⚠️ 請先放入客人訂單截圖再下載！');
+            return;
+          }
+          const a = document.createElement('a');
+          a.href = src;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          return;
+        }
+
+        if (!currentCanvas) await refreshCardPreview();
+        if (!currentCanvas) return;
         window.CardRenderer.downloadCard(currentCanvas, filename);
       });
 
@@ -2721,20 +3044,31 @@ if (typeof module !== 'undefined' && module.exports) {
           return;
         }
 
-        if (!currentCanvas) {
-          await refreshCardPreview();
-        }
-        if (!currentCanvas) {
-          showStatus('error', '❌ 無法產生取貨確認小卡圖片，請確認渲染引擎是否正常。');
-          return;
+        let dataUrl = '';
+        if (currentMode === 'screenshot') {
+          dataUrl = screenshotPngDataUrl || screenshotRawDataUrl || '';
+          if (!dataUrl) {
+            showStatus('warn', '⚠️ 請先放入【客人訂單截圖】再送出！');
+            return;
+          }
+        } else {
+          if (!currentCanvas) {
+            await refreshCardPreview();
+          }
+          if (!currentCanvas) {
+            showStatus('error', '❌ 無法產生取貨確認小卡圖片，請確認渲染引擎是否正常。');
+            return;
+          }
+          dataUrl = currentCanvas.toDataURL('image/png');
         }
 
         btnSendAll.disabled = true;
-        showStatus('info', '⏳ 正在同步至 Google 試算表並上傳小卡至 Google Drive...');
+        showStatus('info', currentMode === 'screenshot'
+          ? '⏳ 正在同步至 Google 試算表並上傳客人訂單截圖至 Google Drive...'
+          : '⏳ 正在同步至 Google 試算表並上傳小卡至 Google Drive...');
 
         const lineNameVal = (parsedState.customer.lineName || parsedState.customer.name || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
         const filenameVal = buildCardFilename(dateTagVal, parsedState.pickup.time, lineNameVal);
-        const dataUrl = currentCanvas.toDataURL('image/png');
         const totalVal = extractTotalFromPricing(fieldPricingText.value);
 
         const hasFlowerText = Boolean(fieldFlowerText.value.trim());
@@ -2761,9 +3095,7 @@ if (typeof module !== 'undefined' && module.exports) {
           filename: filenameVal,
           reviewStatus: '⏳ 待複查',
           nikkiChecked: false,
-          isRescheduled: hasRescheduleNote(),
-          rescheduleNote: hasRescheduleNote() ? '這位客人已改過期' : '',
-          rawText: getNotePlainText()
+          rawText: getActiveRawText()
         };
 
         const drivePayload = {
@@ -2773,7 +3105,7 @@ if (typeof module !== 'undefined' && module.exports) {
           pickupDate: parsedState.pickup.date || dateTagVal,
           dateTag: dateTagVal,
           lineName: lineNameVal,
-          preserveExistingIfNoPhoto: uploadedImages.length === 0,
+          preserveExistingIfNoPhoto: currentMode === 'screenshot' ? false : (uploadedImages.length === 0),
           base64Image: dataUrl
         };
 
@@ -2790,14 +3122,15 @@ if (typeof module !== 'undefined' && module.exports) {
             msgs.push(`⚠️ <strong>Google 試算表</strong>：${(sheetsRes && sheetsRes.message) || '回傳異常'}`);
           }
 
+          const imgLabel = currentMode === 'screenshot' ? '訂單截圖' : '小卡';
           if (driveRes && (driveRes.fileId || (driveRes.data && driveRes.data.fileId))) {
             const d = driveRes.data || driveRes;
             if (d.preservedExistingImage) {
               msgs.push('✅ <strong>Google Drive</strong>：已保留雲端原有含圖小卡（防洗圖保護）');
             } else if (d.isDuplicate) {
-              msgs.push(`⚠️ <strong>Google Drive</strong>：雲端已有同名小卡【${filenameVal}】，已覆蓋更新！`);
+              msgs.push(`⚠️ <strong>Google Drive</strong>：雲端已有同名${imgLabel}【${filenameVal}】，已覆蓋更新！`);
             } else {
-              msgs.push(`✅ <strong>Google Drive</strong>：小卡【${filenameVal}】上傳成功！`);
+              msgs.push(`✅ <strong>Google Drive</strong>：${imgLabel}【${filenameVal}】上傳成功！`);
             }
           } else {
             msgs.push(`⚠️ <strong>Google Drive</strong>：${(driveRes && (driveRes.error || driveRes.message)) || '上傳完成（未回傳 fileId）'}`);
