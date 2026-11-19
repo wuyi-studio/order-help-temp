@@ -2501,6 +2501,46 @@ if (typeof module !== 'undefined' && module.exports) {
         return parsedState;
       }
 
+      function splitMultiNumberedItems(text, type, imgs, addonImgs) {
+        const trimmedText = (text || '').trim();
+        if (!trimmedText) return [];
+        const lines = trimmedText.split(/\r?\n/);
+        const sections = [];
+        let current = [];
+        for (const line of lines) {
+          if (/^\s*[1-9🔟]️⃣/.test(line) && current.some(l => l.trim())) {
+            sections.push(current.join('\n').trim());
+            current = [line];
+          } else {
+            current.push(line);
+          }
+        }
+        if (current.some(l => l.trim())) {
+          sections.push(current.join('\n').trim());
+        }
+
+        if (sections.length <= 1) {
+          return [{ type, text: trimmedText, images: imgs, addonImages: addonImgs || [] }];
+        }
+
+        return sections.map((secText, idx) => {
+          let secImgs = [];
+          if (imgs.length > 0) {
+            if (idx < sections.length - 1) {
+              secImgs = imgs[idx] ? [imgs[idx]] : [];
+            } else {
+              secImgs = imgs.slice(idx);
+            }
+          }
+          return {
+            type,
+            text: secText,
+            images: secImgs,
+            addonImages: idx === sections.length - 1 ? (addonImgs || []) : []
+          };
+        });
+      }
+
       function buildOrderItems() {
         const items = [];
         const cakeImgs = uploadedImages.filter(x => x.category === 'cake').map(x => x.dataUrl);
@@ -2508,13 +2548,13 @@ if (typeof module !== 'undefined' && module.exports) {
         const addonImgs = uploadedImages.filter(x => x.category === 'addon').map(x => x.dataUrl);
 
         if (fieldFlowerText.value.trim()) {
-          items.push({ type: 'flower', text: fieldFlowerText.value.trim(), images: flowerImgs, addonImages: [] });
+          items.push(...splitMultiNumberedItems(fieldFlowerText.value, 'flower', flowerImgs, []));
         }
         if (fieldCakeText.value.trim()) {
-          items.push({ type: 'cake', text: fieldCakeText.value.trim(), images: cakeImgs, addonImages: addonImgs });
+          items.push(...splitMultiNumberedItems(fieldCakeText.value, 'cake', cakeImgs, addonImgs));
         }
         if (items.length === 0) {
-          items.push({ type: 'cake', text: getNotePlainText(), images: cakeImgs, addonImages: addonImgs });
+          items.push(...splitMultiNumberedItems(getNotePlainText(), 'cake', cakeImgs, addonImgs));
         }
         return items;
       }
@@ -3595,9 +3635,9 @@ if (typeof module !== 'undefined' && module.exports) {
         const addonImgs = rawImgs.filter(x => x.category === 'addon').map(x => x.dataUrl || x);
 
         const items = [];
-        if (orderObj.flowerText) items.push({ type: 'flower', text: orderObj.flowerText, images: flowerImgs, addonImages: [] });
-        if (orderObj.cakeText) items.push({ type: 'cake', text: orderObj.cakeText, images: cakeImgs, addonImages: addonImgs });
-        if (items.length === 0) items.push({ type: 'cake', text: orderObj.rawText, images: [...flowerImgs, ...cakeImgs], addonImages: addonImgs });
+        if (orderObj.flowerText) items.push(...splitMultiNumberedItems(orderObj.flowerText, 'flower', flowerImgs, []));
+        if (orderObj.cakeText) items.push(...splitMultiNumberedItems(orderObj.cakeText, 'cake', cakeImgs, addonImgs));
+        if (items.length === 0) items.push(...splitMultiNumberedItems(orderObj.rawText, 'cake', [...flowerImgs, ...cakeImgs], addonImgs));
 
         if (window.CardRenderer && typeof window.CardRenderer.renderCard === 'function') {
           orderObj.canvas = await window.CardRenderer.renderCard(orderObj.state, {
