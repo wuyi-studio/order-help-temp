@@ -667,19 +667,19 @@ const Extractor = {
     // 2. 取貨時間 (例：取貨時間：17:00、取貨時間：16:30 (朋友代取)、自取時間)
     const hasPickupTime = /(?:取貨|自取)?時間\s*[：:]/.test(text) || /取貨時間|自取時間/.test(text);
 
-    // 3. 自取地點 (例：自取地點：台南市中西區友愛街93號、取貨地點、自取門市)
-    const hasPickupLocation = /(?:自取|取貨)(?:地點|門市)\s*[：:]/.test(text) || /自取地點|取貨地點/.test(text);
+    // 3. 自取地點 (例：自取地點：台南市中西區友愛街93號、取貨地點、取貨地址、自取門市)
+    const hasPickupLocation = /(?:自取|取貨)(?:地點|門市|地址)\s*[：:]/.test(text) || /自取地點|取貨地點|取貨地址/.test(text);
 
     // 4. 訂購人 LINE 名稱 (例：訂購人 LINE 名稱：言均、訂購人的 LINE 名稱、LINE 名稱)
     const hasLineName = /(?:訂購人(?:的)?\s*)?(?:LINE|line)\s*名稱/i.test(text);
 
-    // 5. 訂購人姓名 (例：訂購人姓名：潘言均、姓名：潘言均)
-    const hasCustomerName = /訂購人姓名|訂購人\s*姓名/.test(text) || (/(?:訂購人)?姓名\s*[：:]/.test(text) && !/LINE\s*名稱/i.test(text));
+    // 5. 訂購人姓名 (例：訂購人姓名：潘言均、訂購姓名：李思萱、姓名：潘言均)
+    const hasCustomerName = /訂購人姓名|訂購姓名|訂購人\s*姓名/.test(text) || (/(?:訂購人?)?姓名\s*[：:]/.test(text) && !/LINE\s*名稱/i.test(text));
 
-    // 6. 訂購人電話 (例：訂購人電話：0970411157、電話：0970411157)
+    // 6. 訂購人電話 (例：訂購人電話：0970411157、聯絡電話：0979092500)
     const hasCustomerPhone = /訂購人電話|訂購人\s*電話/.test(text) || /(?:訂購人|聯絡)?電話\s*[：:]/.test(text);
 
-    return Boolean(hasPickupDate && hasPickupTime && hasPickupLocation && hasLineName && hasCustomerName && hasCustomerPhone);
+    return Boolean(hasPickupDate && hasPickupTime && hasPickupLocation && (hasLineName || hasCustomerName) && hasCustomerName && hasCustomerPhone);
   },
 
   /**
@@ -759,11 +759,53 @@ const Extractor = {
       }
     }
 
+    // 若電話在上方（例如【WUYI門市花束預訂單】），檢查最底部是否有「預估應付總額 / 應付總額 / 總共 / 總金額」等結尾金額區塊
+    const bottomTotalIdx = this._findBottomPricingStartIndex(lines);
+    if (bottomTotalIdx > 0) {
+      let cutIdx = bottomTotalIdx;
+      while (cutIdx > 0 && /^[\s\-－—=＝_]+$/.test(lines[cutIdx - 1])) {
+        if (lines[cutIdx - 1].trim()) {
+          cutIdx--;
+          break;
+        }
+        cutIdx--;
+      }
+      return lines.slice(0, cutIdx).join('\n').trim();
+    }
+
     return text.trim();
+  },
+
+  _findBottomPricingStartIndex(lines) {
+    if (!Array.isArray(lines) || lines.length === 0) return -1;
+    // 從底部往上找非空行，確認最後幾行是否為總額結算區
+    let lastNonEmpty = lines.length - 1;
+    while (lastNonEmpty >= 0 && !lines[lastNonEmpty].trim()) lastNonEmpty--;
+    if (lastNonEmpty < 0) return -1;
+
+    const totalLineRe = /^(?:預估應付總額|應付總額|總金額|總共|合計|總計|總額)\s*[：:]?\s*[\$NT\s]*\d+/i;
+    if (!totalLineRe.test(lines[lastNonEmpty].trim())) return -1;
+
+    let startIdx = lastNonEmpty;
+    for (let i = lastNonEmpty - 1; i >= 0; i--) {
+      const t = lines[i].trim();
+      if (!t) continue;
+      if (/^[\-－—=＝_]{3,}$/.test(t)) {
+        break;
+      }
+      // 若分隔線上方沒有其他金額明細，只到總額行本身
+      if (/^(?:預估應付總額|應付總額|總金額|總共|合計|總計|總額|金額|尾款|加購|提袋|餐具|蠟燭|保冷|保冰|運費|折扣)/.test(t) || /^\d+\s*[\+＋]/.test(t)) {
+        startIdx = i;
+      } else {
+        break;
+      }
+    }
+    return startIdx;
   },
 
   /**
    * 專門提取「訂購人電話：09XXXXXXXX」下方的金額加總明細
+   * 若電話在上方（如門市花束預訂單），則提取最底部的「預估應付總額 / 總共」區塊
    * @param {string} text 
    * @returns {string} 金額明細內容
    */
@@ -781,9 +823,17 @@ const Extractor = {
 
     if (phoneIdx !== -1 && phoneIdx + 1 < lines.length) {
       const trailingLines = lines.slice(phoneIdx + 1).map(l => l.trim()).filter(Boolean);
-      if (trailingLines.length > 0) {
+      const hasOrderBodyAfterPhone = trailingLines.some(l =>
+        /(?:取貨日期|自取日期|取貨時間|自取時間|取貨地址|自取地點|花材色系|鮮花色系|蛋糕尺寸|蛋糕口味|💐|🎂)/.test(l)
+      );
+      if (trailingLines.length > 0 && !hasOrderBodyAfterPhone) {
         return trailingLines.join('\n');
       }
+    }
+
+    const bottomStart = this._findBottomPricingStartIndex(lines);
+    if (bottomStart !== -1) {
+      return lines.slice(bottomStart).map(l => l.trim()).filter(Boolean).join('\n');
     }
 
     return '';
@@ -953,6 +1003,10 @@ const Extractor = {
           state.flower.budget = trimmed.replace(/^(想要的預算|想要得預算|鮮花預算|預算)(\([^)]*\))?[：:]\s*/i, '').trim();
           continue;
         }
+        if (!state.flower.budget && /(?:花束|永生花)/.test(trimmed) && /\$\s*(\d[\d,]*)/.test(trimmed)) {
+          const mBudget = trimmed.match(/\$\s*(\d[\d,]*)/);
+          if (mBudget) state.flower.budget = `$${mBudget[1]}`;
+        }
         if (/^(花材色系|鮮花色系|色系)[：:]/i.test(trimmed)) {
           state.flower.color = trimmed.replace(/^(花材色系|鮮花色系|色系)[：:]\s*/i, '').trim();
           continue;
@@ -961,7 +1015,12 @@ const Extractor = {
           state.flower.paper = trimmed.replace(/^(包裝紙色系|包裝紙|襯紙|純色襯紙|包裝)[：:]\s*/i, '').trim();
           continue;
         }
-        if (/^(提袋|加購|需加購)[：:]/i.test(trimmed) && currentSection === 'flower') {
+        if (/^(包裝紙色系|包裝紙|襯紙|純色襯紙|包裝)\s*[\(（]([^\)）]+)[\)）]/i.test(trimmed)) {
+          const mPaper = trimmed.match(/^(?:包裝紙色系|包裝紙|襯紙|純色襯紙|包裝)\s*[\(（]([^\)）]+)[\)）]/i);
+          if (mPaper) state.flower.paper = mPaper[1].trim();
+          continue;
+        }
+        if ((/^(提袋|加購|需加購)[：:]/i.test(trimmed) && currentSection === 'flower') || /^(?:加購提袋|附提袋|提袋)$/i.test(trimmed)) {
           state.flower.paper = state.flower.paper ? `${state.flower.paper} (附提袋)` : '附提袋';
           continue;
         }
@@ -1088,17 +1147,17 @@ const Extractor = {
       const line = lines[i];
       const trimmed = line.trim().replace(/^[•·‧↳]\s*/, '');
 
-      // 起始判定：支援 蛋糕$790、漢堡盒$760、花束$880、鮮花預算：500、或直接寫 總共$895、＝1400、純數字等
+      // 起始判定：支援 蛋糕$790、漢堡盒$760、花束$880、鮮花預算：500、或直接寫 總共$895、預估應付總額：$640、＝1400、純數字等
       if (!capturing) {
         if (/^(蛋糕|漢堡盒|花束|鮮花預算|預算|商品)[\$：:\s]\s*\d+/i.test(trimmed) ||
             /^(蛋糕|漢堡盒|花束|2人餐具|5人餐具|蠟燭|保冷|保冰|插牌|襯紙|提袋)/.test(trimmed) && /[\$＝=：:]\s*\d+/.test(trimmed) ||
-            /^(?:總共|合計|總計|總額|金額|尾款|＝|=)[\s:：\$]*\d+/i.test(trimmed) ||
+            /^(?:預估應付總額|應付總額|總金額|總共|合計|總計|總額|金額|尾款|＝|=)[\s:：\$]*\d+/i.test(trimmed) ||
             /^[\$]?\s*\d{2,6}\s*元?$/.test(trimmed)) {
           capturing = true;
           capturedLines.push(trimmed);
 
           // 若第一行就直接是總計或純數字
-          const directMatch = trimmed.match(/^(?:總共|合計|總計|總額|金額|尾款|＝|=)[\s:：\$]*(\d+[\d,]*)/i) ||
+          const directMatch = trimmed.match(/^(?:預估應付總額|應付總額|總金額|總共|合計|總計|總額|金額|尾款|＝|=)[\s:：\$]*(\d+[\d,]*)/i) ||
                               trimmed.match(/^[\$]?\s*(\d{2,6})\s*元?$/);
           if (directMatch) {
             total = parseInt(directMatch[1].replace(/,/g, ''), 10) || 0;
@@ -1111,8 +1170,8 @@ const Extractor = {
       if (capturing) {
         if (!trimmed) continue; // 略過中間空行
 
-        // 結束判定：總共$895、＝1400、=1400、合計...
-        const totalMatch = trimmed.match(/^(?:總共|合計|總計|總額|金額|尾款|＝|=)[\s:：\$]*(\d+[\d,]*)/i);
+        // 結束判定：總共$895、預估應付總額：$640、＝1400、=1400、合計...
+        const totalMatch = trimmed.match(/^(?:預估應付總額|應付總額|總金額|總共|合計|總計|總額|金額|尾款|＝|=)[\s:：\$]*(\d+[\d,]*)/i);
         if (totalMatch) {
           capturedLines.push(trimmed);
           total = parseInt(totalMatch[1].replace(/,/g, ''), 10) || 0;
@@ -2358,7 +2417,7 @@ if (typeof module !== 'undefined' && module.exports) {
 
       function extractTotalFromPricing(pricingText) {
         if (!pricingText) return '0';
-        const mTotal = pricingText.match(/總共[^\d$]*\$?\s*(\d[\d,]*)/);
+        const mTotal = pricingText.match(/(?:預估應付總額|應付總額|總金額|總共|合計|總計)[^\d$]*\$?\s*(\d[\d,]*)/);
         if (mTotal) return mTotal[1].replace(/,/g, '');
         const mEq = pricingText.match(/=\s*(\d[\d,]*)\s*$/m);
         if (mEq) return mEq[1].replace(/,/g, '');
