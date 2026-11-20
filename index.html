@@ -592,6 +592,7 @@
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <input type="date" id="calCompareDate" style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 5px 10px; font-size: 13px;">
           <button type="button" class="btn btn-soft" id="btnFetchCalendar">🔄 從 Google 日曆自動抓取</button>
+          <button type="button" class="btn btn-soft" id="btnCheckCloudDay">🔍 雲端查單 (Drive＋試算表)</button>
           <button type="button" class="btn" id="btnCopyGasCalSnippet" style="font-size: 12px;">📋 複製日曆讀取 Code.gs</button>
           <button type="button" class="btn" id="btnCloseCalCompare" style="font-size: 12px;">✕ 關閉</button>
         </div>
@@ -3161,6 +3162,7 @@ if (typeof module !== 'undefined' && module.exports) {
           rawText: getNotePlainText()
         };
 
+        const oldDateMatch = getNotePlainText().match(/原\s*(?:日期[：:]\s*)?((?:20\d{2}[\/\-\.])?\d{1,2}[\/\-\.]\d{1,2})/);
         const drivePayload = {
           action: 'uploadCardToDrive',
           folderId: DRIVE_FOLDER_ID,
@@ -3168,6 +3170,8 @@ if (typeof module !== 'undefined' && module.exports) {
           pickupDate: parsedState.pickup.date || dateTagVal,
           dateTag: dateTagVal,
           lineName: lineNameVal,
+          isRescheduled: hasRescheduleNote(),
+          oldDate: oldDateMatch ? oldDateMatch[1] : '',
           preserveExistingIfNoPhoto: uploadedImages.length === 0,
           base64Image: dataUrl
         };
@@ -3992,6 +3996,7 @@ if (typeof module !== 'undefined' && module.exports) {
           rescheduleNote: ord.isRescheduled ? '這位客人已改過期' : '',
           rawText: ord.rawText
         };
+        const oldDateMatch = (ord.rawText || '').match(/原\s*(?:日期[：:]\s*)?((?:20\d{2}[\/\-\.])?\d{1,2}[\/\-\.]\d{1,2})/);
         const drivePayload = {
           action: 'uploadCardToDrive',
           folderId: DRIVE_FOLDER_ID,
@@ -3999,6 +4004,8 @@ if (typeof module !== 'undefined' && module.exports) {
           pickupDate: (st.pickup && st.pickup.date) || ord.dateTag,
           dateTag: ord.dateTag,
           lineName: lineNameVal,
+          isRescheduled: Boolean(ord.isRescheduled),
+          oldDate: ord.oldDate || (oldDateMatch ? oldDateMatch[1] : ''),
           preserveExistingIfNoPhoto: !ord.images || ord.images.length === 0,
           base64Image: ord.canvas.toDataURL('image/png')
         };
@@ -4095,6 +4102,10 @@ if (typeof module !== 'undefined' && module.exports) {
           btnResched.textContent = ord.isRescheduled ? '✓ 已改期' : '🔄 改期';
           btnResched.onclick = async () => {
             ord.isRescheduled = !ord.isRescheduled;
+            ord.showReschedEdit = ord.isRescheduled;
+            if (ord.isRescheduled && !ord.oldDate) {
+              ord.oldDate = (ord.state && ord.state.pickup && ord.state.pickup.date) || ord.dateTag || '';
+            }
             const stripRe = /\n?^\s*備[註注][：:]\s*這位客人已改過期\s*$/gm;
             if (ord.isRescheduled) {
               if (ord.cakeText || !ord.flowerText) {
@@ -4201,6 +4212,57 @@ if (typeof module !== 'undefined' && module.exports) {
           ].filter(Boolean).join(' ｜ ');
           meta.textContent = `日期：${ord.dateTag || '未指定'} ｜ 時間：${(ord.state.pickup && ord.state.pickup.time) || '未指定'} ｜ 圖片：${(ord.images || []).length} 張 ｜ 總金額：$${extractTotalFromPricing(ord.pricingText)}${extraFlags ? ' ｜ ' + extraFlags : ''}`;
 
+          let reschedEditBox = null;
+          if (ord.showReschedEdit) {
+            reschedEditBox = document.createElement('div');
+            reschedEditBox.style.cssText = 'background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;font-size:12px;';
+            reschedEditBox.innerHTML = `
+              <strong style="color:#92400e;">🔄 改期與內容快速修改（可改日期、時間、口味、尺寸）</strong>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+                <div><label style="font-size:11px;color:#64748b;">原日期(供搬移舊圖)</label><input type="text" class="rs-old-date" value="${(ord.oldDate || '').replace(/"/g, '&quot;')}" placeholder="11/21"></div>
+                <div><label style="font-size:11px;color:#64748b;">新取貨日期</label><input type="text" class="rs-new-date" value="${((ord.state.pickup && ord.state.pickup.date) || ord.dateTag || '').replace(/"/g, '&quot;')}" placeholder="11/28"></div>
+                <div><label style="font-size:11px;color:#64748b;">新取貨時間</label><input type="text" class="rs-new-time" value="${((ord.state.pickup && ord.state.pickup.time) || '').replace(/"/g, '&quot;')}" placeholder="15:00"></div>
+              </div>
+              <div><label style="font-size:11px;color:#64748b;">🎂 蛋糕明細（可改尺寸、口味、題字）</label><textarea class="rs-cake-text" rows="3"></textarea></div>
+              <div><label style="font-size:11px;color:#64748b;">💐 花束明細</label><textarea class="rs-flower-text" rows="2"></textarea></div>
+              <div style="display:flex;gap:6px;justify-content:flex-end;">
+                <button type="button" class="btn btn-soft rs-apply-btn" style="padding:4px 12px;font-size:12px;">✅ 套用修改並重繪小卡</button>
+              </div>
+            `;
+            reschedEditBox.querySelector('.rs-cake-text').value = ord.cakeText || '';
+            reschedEditBox.querySelector('.rs-flower-text').value = ord.flowerText || '';
+            reschedEditBox.querySelector('.rs-apply-btn').onclick = async () => {
+              const newDate = reschedEditBox.querySelector('.rs-new-date').value.trim();
+              const newTime = reschedEditBox.querySelector('.rs-new-time').value.trim();
+              ord.oldDate = reschedEditBox.querySelector('.rs-old-date').value.trim();
+              ord.cakeText = reschedEditBox.querySelector('.rs-cake-text').value.trim();
+              ord.flowerText = reschedEditBox.querySelector('.rs-flower-text').value.trim();
+              ord.state.pickup = ord.state.pickup || {};
+              if (newDate) {
+                ord.state.pickup.date = newDate;
+                ord.state.pickup.dateTag = inferDateTag(newDate);
+                ord.dateTag = ord.state.pickup.dateTag;
+              }
+              ord.state.pickup.time = newTime;
+              // 同步更新蛋糕尺寸與口味欄位供試算表寫入
+              if (window.Extractor && typeof window.Extractor.parseOrderText === 'function') {
+                const reParsed = window.Extractor.parseOrderText([ord.flowerText, ord.cakeText].filter(Boolean).join('\n'));
+                if (reParsed && reParsed.cake) {
+                  ord.state.cake = Object.assign({}, ord.state.cake || {}, reParsed.cake);
+                }
+                if (reParsed && reParsed.flower) {
+                  ord.state.flower = Object.assign({}, ord.state.flower || {}, reParsed.flower);
+                }
+              }
+              const ln = ((ord.state.customer && (ord.state.customer.lineName || ord.state.customer.name)) || '客戶').trim().replace(/[\/\\:*?"<>|]/g, '_');
+              ord.baseFilename = buildCardFilename(ord.dateTag, newTime, ln);
+              ord.filename = ord.baseFilename;
+              ord.showReschedEdit = false;
+              await renderBatchCardItem(ord);
+              renderBatchPreviewGrid();
+            };
+          }
+
           // 每張卡片內的附圖管理列（可切換 🎂/💐/🕯️ 或移除）
           if (ord.images && ord.images.length > 0) {
             const imgRow = document.createElement('div');
@@ -4238,10 +4300,12 @@ if (typeof module !== 'undefined' && module.exports) {
             });
             card.appendChild(head);
             card.appendChild(meta);
+            if (reschedEditBox) card.appendChild(reschedEditBox);
             card.appendChild(imgRow);
           } else {
             card.appendChild(head);
             card.appendChild(meta);
+            if (reschedEditBox) card.appendChild(reschedEditBox);
           }
 
           const preview = document.createElement('div');
@@ -4622,6 +4686,47 @@ if (typeof module !== 'undefined' && module.exports) {
       }
 
       document.getElementById('btnRunCalCompare').addEventListener('click', runCalendarComparison);
+
+      document.getElementById('btnCheckCloudDay').addEventListener('click', async () => {
+        const webhookUrl = getWebhookUrl();
+        if (!webhookUrl) {
+          calFetchStatus.textContent = '❌ 請先設定 Apps Script 網址';
+          return;
+        }
+        const dateStr = calCompareDate.value || '2026-11-22';
+        calFetchStatus.textContent = `⏳ 正在從雲端查詢 ${dateStr} 全部 Drive 檔案、試算表與日曆（無 20 筆上限）...`;
+        try {
+          const url = `${webhookUrl}?action=checkDayOrders&date=${encodeURIComponent(dateStr)}&folderId=${encodeURIComponent(DRIVE_FOLDER_ID)}&calendarId=${encodeURIComponent(WUYI_CALENDAR_ID)}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          if (!data || data.status !== 'success' || !Array.isArray(data.driveFiles)) {
+            calFetchStatus.textContent = '⚠️ 目前 Code.gs 尚未部署 checkDayOrders，請使用新版 Code.gs 重新部署！';
+            return;
+          }
+          const driveNames = data.driveFiles.map(f => f.name);
+          const sheetItems = data.sheetOrders || [];
+          const calTitles = (data.calendarEvents || []).map(ev => ev.title).filter(Boolean);
+          if (calTitles.length > 0) {
+            calPasteInput.value = calTitles.join('\n');
+          }
+          let html = `
+            <div class="cal-summary-bar">
+              <span class="cal-pill">📁 Google Drive：${driveNames.length} 筆</span>
+              <span class="cal-pill matched">📊 Google 試算表：${sheetItems.length} 筆</span>
+              <span class="cal-pill">📅 Google 日曆：${calTitles.length} 筆</span>
+            </div>
+            <div style="font-size: 12.5px; font-weight: 700; color: #334155; margin-top: 8px;">📁 Drive 檔案清單（共 ${driveNames.length} 筆）：</div>
+            <div class="cal-matched-list">
+              ${driveNames.map(n => `<span class="cal-matched-chip">${String(n).replace(/</g, '&lt;')}</span>`).join('')}
+            </div>
+          `;
+          calCompareResults.innerHTML = html;
+          calCompareResults.style.display = 'block';
+          calFetchStatus.textContent = `✅ 雲端查單完成（Drive ${driveNames.length} 筆、試算表 ${sheetItems.length} 筆、日曆 ${calTitles.length} 筆）`;
+        } catch (err) {
+          calFetchStatus.textContent = `⚠️ 雲端查單失敗（${err.message}），請確認 Code.gs 已更新並部署！`;
+        }
+      });
     })();
   </script>
 </body>
