@@ -1531,9 +1531,9 @@ const CardRenderer = {
     const W = 580;
     const paddingX = 36;
     const contentW = W - paddingX * 2;
-    const fontMain = '500 18px -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
-    const fontBold = 'bold 18px -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
-    const fontSection = 'bold 20px -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+    const fontMain = '400 18px -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+    const fontBold = '400 18px -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+    const fontSection = '400 20px -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
     const lineHeight = 30;
     const emptyLineSpacing = 14;
     const NUM_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
@@ -1751,7 +1751,7 @@ const CardRenderer = {
       if (item.type === 'tag_jiadan') {
         this._drawRoundRect(ctx, paddingX, curY, 48, 24, 4, '#fce7f3');
         ctx.fillStyle = '#e11d48';
-        ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "PingFang TC", sans-serif';
+        ctx.font = '400 13px -apple-system, BlinkMacSystemFont, "PingFang TC", sans-serif';
         ctx.fillText('加單', paddingX + 11, curY + 12);
         curY += item.height;
         continue;
@@ -2144,27 +2144,27 @@ const CardRenderer = {
       if (!trimmed) return '<p style="margin: 6px 0; font-size: 15px; line-height: 1.5;">&nbsp;</p>';
 
       if (trimmed === '加單') {
-        return `<p style="margin: 4px 0; font-size: 14px; line-height: 1.5;"><span style="background-color: #fce7f3; color: #e11d48; font-weight: bold;">加單</span></p>`;
+        return `<p style="margin: 4px 0; font-size: 14px; line-height: 1.5;"><span style="background-color: #fce7f3; color: #e11d48;">加單</span></p>`;
       }
 
       // 需加購/加購：粉紫色螢光底色
       if (/^(需加購|加購)[：:]/i.test(trimmed)) {
-        return `<p style="margin: 5px 0; font-size: 15px; line-height: 1.5;"><span style="background-color: #fae8ff; color: #9333ea; font-weight: bold;">${escapeHtml(line)}</span></p>`;
+        return `<p style="margin: 5px 0; font-size: 15px; line-height: 1.5;"><span style="background-color: #fae8ff; color: #9333ea;">${escapeHtml(line)}</span></p>`;
       }
 
       // 序號標題 (1️⃣, 2️⃣, 3️⃣, 4️⃣)
       if (/^[1-9🔟]️⃣/.test(trimmed)) {
-        return `<p style="margin: 8px 0 4px 0; font-size: 17px; font-weight: bold; line-height: 1.5; color: #1e293b;"><b>${escapeHtml(line)}</b></p>`;
+        return `<p style="margin: 8px 0 4px 0; font-size: 17px; line-height: 1.5; color: #1e293b;">${escapeHtml(line)}</p>`;
       }
 
       // 花束標題
       if (/💐.*花束.*💐|花束/.test(trimmed) && !/色系|預算|襯紙|提袋/.test(trimmed)) {
-        return `<p style="margin: 6px 0 4px 0; font-size: 16px; font-weight: bold; line-height: 1.5; color: #0f172a;"><b>${escapeHtml(line)}</b></p>`;
+        return `<p style="margin: 6px 0 4px 0; font-size: 16px; line-height: 1.5; color: #0f172a;">${escapeHtml(line)}</p>`;
       }
 
-      // 重點欄位標題加粗
+      // 重點欄位標題
       if (/^(圖款|蛋糕尺寸|蛋糕口味|取貨日期|取貨時間|自取地點|訂購人)/.test(trimmed)) {
-        return `<p style="margin: 2px 0; font-size: 15px; font-weight: bold; line-height: 1.5; color: #1e293b;"><b>${escapeHtml(line)}</b></p>`;
+        return `<p style="margin: 2px 0; font-size: 15px; line-height: 1.5; color: #1e293b;">${escapeHtml(line)}</p>`;
       }
 
       // 一般訂單文字
@@ -2205,7 +2205,7 @@ const CardRenderer = {
           hasHeader = true;
           const cleanTitle = trimmed.replace(/^[1-9🔟]️⃣\s*/, '').trim();
           const headerText = `${numEmoji} ${cleanTitle}`;
-          htmlSections.push(`<p style="margin: 8px 0 4px 0; font-size: 17px; font-weight: bold; line-height: 1.5; color: #1e293b;"><b>${escapeHtml(headerText)}</b></p>`);
+          htmlSections.push(`<p style="margin: 8px 0 4px 0; font-size: 17px; line-height: 1.5; color: #1e293b;">${escapeHtml(headerText)}</p>`);
           itemPlainLines.push(headerText);
 
           if (allImgs.length > 0 && !placedImgs) {
@@ -2216,7 +2216,7 @@ const CardRenderer = {
         }
 
         if (!hasHeader && i === startIdx) {
-          htmlSections.push(`<p style="margin: 8px 0 4px 0; font-size: 17px; font-weight: bold; line-height: 1.5; color: #1e293b;"><b>${escapeHtml(defaultHeader)}</b></p>`);
+          htmlSections.push(`<p style="margin: 8px 0 4px 0; font-size: 17px; line-height: 1.5; color: #1e293b;">${escapeHtml(defaultHeader)}</p>`);
           itemPlainLines.push(defaultHeader);
           hasHeader = true;
 
@@ -2237,7 +2237,7 @@ const CardRenderer = {
 
       if (!placedImgs && allImgs.length > 0) {
         if (!hasHeader) {
-          htmlSections.push(`<p style="margin: 8px 0 4px 0; font-size: 17px; font-weight: bold; line-height: 1.5; color: #1e293b;"><b>${escapeHtml(defaultHeader)}</b></p>`);
+          htmlSections.push(`<p style="margin: 8px 0 4px 0; font-size: 17px; line-height: 1.5; color: #1e293b;">${escapeHtml(defaultHeader)}</p>`);
           itemPlainLines.push(defaultHeader);
         }
         htmlSections.push(renderImageParagraph(allImgs, isFlower ? '花束圖' : '蛋糕/配件圖'));
@@ -2602,6 +2602,12 @@ if (typeof module !== 'undefined' && module.exports) {
 
         syncRescheduleButton();
         refreshCardPreview();
+
+        const mergedInfo = detectMergedOrderInfo(text);
+        if (mergedInfo) {
+          const who = mergedInfo.names.length > 0 ? mergedInfo.names.join('、') : mergedInfo.phones.join('、');
+          showStatus('error', `🚨 <strong>疑似混入 ${mergedInfo.count} 筆不同訂單</strong>（偵測到：${who}）！請確認是否不小心把兩筆訂單貼在一起，建議改用「📦 批次輸入」或分開貼上。`);
+        }
       }
 
       function syncFieldsToState() {
@@ -3594,6 +3600,63 @@ if (typeof module !== 'undefined' && module.exports) {
         return ord;
       }
 
+      function splitRangeByOrderBoundaries(rng) {
+        const chunk = rng.text || '';
+        const lineInfos = [];
+        let pos = 0;
+        const rawLines = chunk.split('\n');
+        for (let i = 0; i < rawLines.length; i++) {
+          const line = rawLines[i];
+          lineInfos.push({ text: line, start: pos, end: pos + line.length });
+          pos += line.length + 1;
+        }
+
+        const phoneIndices = [];
+        for (let i = 0; i < lineInfos.length; i++) {
+          const t = lineInfos[i].text.trim().replace(/^[•·‧↳]\s*/, '');
+          if (/^(?:訂購人|聯絡)?電話\s*[：:]/.test(t)) {
+            phoneIndices.push(i);
+          }
+        }
+        if (phoneIndices.length < 2) return [rng];
+
+        const subRanges = [];
+        let startLineIdx = 0;
+        for (let p = 0; p < phoneIndices.length - 1; p++) {
+          let splitLineIdx = phoneIndices[p] + 1;
+          while (splitLineIdx < lineInfos.length) {
+            const t = lineInfos[splitLineIdx].text.trim();
+            if (!t) {
+              splitLineIdx++;
+              continue;
+            }
+            if (/^(?:蛋糕|漢堡盒|花束|餐具|蠟燭|保冰|保冷|插牌|提袋|預估應付總額|應付總額|總金額|總共|合計|總計|總額|＝|=|收\s*\d+|\d+\s*[\+＋\-＝=])/.test(t) || /^\d{2,5}$/.test(t)) {
+              splitLineIdx++;
+              continue;
+            }
+            break;
+          }
+          if (splitLineIdx > startLineIdx && splitLineIdx < lineInfos.length) {
+            const subStart = rng.start + lineInfos[startLineIdx].start;
+            const subEnd = rng.start + lineInfos[splitLineIdx - 1].end;
+            const subText = chunk.slice(lineInfos[startLineIdx].start, lineInfos[splitLineIdx - 1].end);
+            if (subText.replace(/[\uFFFC\s\u00a0,，＝=—\-_]/g, '').length > 0) {
+              subRanges.push({ start: subStart, end: subEnd, text: subText });
+            }
+            startLineIdx = splitLineIdx;
+          }
+        }
+        if (startLineIdx < lineInfos.length) {
+          const subStart = rng.start + lineInfos[startLineIdx].start;
+          const subEnd = rng.end;
+          const subText = chunk.slice(lineInfos[startLineIdx].start);
+          if (subText.replace(/[\uFFFC\s\u00a0,，＝=—\-_]/g, '').length > 0) {
+            subRanges.push({ start: subStart, end: subEnd, text: subText });
+          }
+        }
+        return subRanges.length >= 2 ? subRanges : [rng];
+      }
+
       function splitTextWithRanges(raw) {
         const normalized = (raw || '').replace(/\r\n/g, '\n');
         // 優先偵測「空超過五行」（即連續 5 個以上換行，允許中間夾帶空白或 \u00a0）
@@ -3632,7 +3695,12 @@ if (typeof module !== 'undefined' && module.exports) {
             merged.push(r);
           }
         }
-        return merged;
+        // 若兩筆訂單之間空行不足 5 行（黏在同一段內），自動依訂單邊界拆分並保留原始字元位置供圖片配對
+        const finalRanges = [];
+        for (const r of merged) {
+          finalRanges.push(...splitRangeByOrderBoundaries(r));
+        }
+        return finalRanges;
       }
 
       async function importBatchFile(file) {
@@ -3787,8 +3855,93 @@ if (typeof module !== 'undefined' && module.exports) {
         }
       }
 
+      function detectMergedOrderInfo(rawText) {
+        if (!rawText || typeof rawText !== 'string') return null;
+        const lines = rawText.replace(/\r\n/g, '\n').split('\n');
+        const phones = [];
+        const phoneSet = new Set();
+        const names = [];
+        const nameSet = new Set();
+        let dateCount = 0;
+
+        for (const line of lines) {
+          const t = line.trim().replace(/^[•·‧↳]\s*/, '');
+          const mPhone = t.match(/^(?:訂購人|聯絡)?電話\s*[：:]\s*([^\s].*)$/);
+          if (mPhone) {
+            const p = mPhone[1].replace(/[-\s]/g, '');
+            if (p && !phoneSet.has(p)) {
+              phoneSet.add(p);
+              phones.push(p);
+            }
+          }
+          const mName = t.match(/^(?:訂購人姓名|訂購姓名|訂購人\s*(?:LINE|Line|line)\s*名稱|訂購人的\s*(?:LINE|Line|line)\s*名稱)\s*[：:]\s*(.+)$/);
+          if (mName) {
+            const n = mName[1].trim();
+            if (n && !nameSet.has(n)) {
+              nameSet.add(n);
+              names.push(n);
+            }
+          }
+          if (/^(?:取貨|自取)?日期\s*[：:]/.test(t)) {
+            dateCount++;
+          }
+        }
+
+        if (phones.length >= 2 || dateCount >= 2) {
+          return {
+            count: Math.max(phones.length, dateCount, 2),
+            phones,
+            names
+          };
+        }
+        return null;
+      }
+
+      function splitMergedOrderText(rawText) {
+        if (!rawText || typeof rawText !== 'string') return [rawText];
+        const lines = rawText.replace(/\r\n/g, '\n').split('\n');
+        const phoneLineIndices = [];
+        for (let i = 0; i < lines.length; i++) {
+          const t = lines[i].trim().replace(/^[•·‧↳]\s*/, '');
+          if (/^(?:訂購人|聯絡)?電話\s*[：:]/.test(t)) {
+            phoneLineIndices.push(i);
+          }
+        }
+        if (phoneLineIndices.length < 2) return [rawText];
+
+        const chunks = [];
+        let startIdx = 0;
+        for (let p = 0; p < phoneLineIndices.length - 1; p++) {
+          let splitAt = phoneLineIndices[p] + 1;
+          // 跳過該筆訂單緊接在電話後面的金額明細與空行
+          while (splitAt < lines.length) {
+            const t = lines[splitAt].trim();
+            if (!t) {
+              splitAt++;
+              continue;
+            }
+            if (/^(?:蛋糕|漢堡盒|花束|餐具|蠟燭|保冰|保冷|插牌|提袋|預估應付總額|應付總額|總金額|總共|合計|總計|總額|＝|=|收\s*\d+|\d+\s*[\+＋\-＝=])/.test(t) || /^\d{2,5}$/.test(t)) {
+              splitAt++;
+              continue;
+            }
+            break;
+          }
+          const part = lines.slice(startIdx, splitAt).join('\n').trim();
+          if (part) chunks.push(part);
+          startIdx = splitAt;
+        }
+        const tail = lines.slice(startIdx).join('\n').trim();
+        if (tail) chunks.push(tail);
+        return chunks.length >= 2 ? chunks : [rawText];
+      }
+
       function dedupeBatchFilenames() {
         const seen = new Map();
+        const phoneCounts = new Map();
+        for (const ord of batchOrders) {
+          const phone = ((ord.state && ord.state.customer && ord.state.customer.phone) || '').replace(/[-\s]/g, '');
+          if (phone) phoneCounts.set(phone, (phoneCounts.get(phone) || 0) + 1);
+        }
         for (const ord of batchOrders) {
           const base = (ord.baseFilename || ord.filename || '客戶.png').replace(/\.png$/i, '');
           const count = (seen.get(base) || 0) + 1;
@@ -3801,6 +3954,9 @@ if (typeof module !== 'undefined' && module.exports) {
             ord.filename = `${base}.png`;
             ord.isDuplicateName = false;
           }
+          const phone = ((ord.state && ord.state.customer && ord.state.customer.phone) || '').replace(/[-\s]/g, '');
+          ord.isDuplicatePhone = Boolean(phone && (phoneCounts.get(phone) || 0) > 1);
+          ord.mergedAlert = detectMergedOrderInfo(ord.rawText);
         }
       }
 
@@ -3857,19 +4013,68 @@ if (typeof module !== 'undefined' && module.exports) {
       async function renderBatchPreviewGrid() {
         dedupeBatchFilenames();
         batchPreviewList.innerHTML = '';
-        batchCountHint.textContent = batchOrders.length > 0
-          ? `共解析 ${batchOrders.length} 筆訂單（可預覽小卡、調整改期或圖片分類）`
+        const mergedCount = batchOrders.filter(o => o.mergedAlert).length;
+        const dupCount = batchOrders.filter(o => o.isDuplicateName || o.isDuplicatePhone).length;
+        const alertNotes = [];
+        if (mergedCount > 0) alertNotes.push(`🚨 ${mergedCount} 筆疑似混單`);
+        if (dupCount > 0) alertNotes.push(`⚠️ ${dupCount} 筆重複檔名/電話`);
+        batchCountHint.innerHTML = batchOrders.length > 0
+          ? `共解析 ${batchOrders.length} 筆訂單（可預覽小卡、調整改期或圖片分類）${alertNotes.length > 0 ? ` ｜ <strong style="color:#dc2626;">${alertNotes.join('、')}（已高亮標示）</strong>` : ''}`
           : '尚未解析訂單';
 
         for (let idx = 0; idx < batchOrders.length; idx++) {
           const ord = batchOrders[idx];
           const card = document.createElement('div');
           card.className = 'batch-card';
-          if (ord.sendStatus === 'error') {
-            card.style.borderColor = '#ef4444';
+          if (ord.sendStatus === 'error' || ord.mergedAlert) {
+            card.style.border = '2.5px solid #dc2626';
             card.style.background = '#fef2f2';
+            card.style.boxShadow = '0 0 0 3px rgba(220, 38, 38, 0.14)';
+          } else if (ord.isDuplicateName || ord.isDuplicatePhone) {
+            card.style.border = '2px solid #f59e0b';
+            card.style.background = '#fffbeb';
           } else if (ord.sendStatus === 'ok') {
             card.style.borderColor = '#22c55e';
+          }
+
+          if (ord.mergedAlert || ord.isDuplicateName || ord.isDuplicatePhone) {
+            const alertBox = document.createElement('div');
+            alertBox.style.cssText = 'padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;';
+            if (ord.mergedAlert) {
+              alertBox.style.background = '#fee2e2';
+              alertBox.style.border = '1px solid #ef4444';
+              alertBox.style.color = '#991b1b';
+              const who = ord.mergedAlert.names.length > 0 ? ord.mergedAlert.names.join('、') : ord.mergedAlert.phones.join('、');
+              const msgSpan = document.createElement('span');
+              msgSpan.textContent = `🚨 疑似混入 ${ord.mergedAlert.count} 筆不同訂單（${who}），請勿直接送出！`;
+              const splitBtn = document.createElement('button');
+              splitBtn.type = 'button';
+              splitBtn.className = 'btn';
+              splitBtn.style.cssText = 'padding: 3px 9px; font-size: 11.5px; background: #dc2626; color: #fff; border-color: #dc2626;';
+              splitBtn.textContent = '✂️ 自動拆成獨立訂單';
+              splitBtn.onclick = async () => {
+                const parts = splitMergedOrderText(ord.rawText);
+                if (parts.length < 2) return;
+                const newOrds = [];
+                for (let k = 0; k < parts.length; k++) {
+                  const subOrd = await buildBatchOrderObj(parts[k], idx + k, k === 0 ? (ord.images || []) : []);
+                  if (subOrd) newOrds.push(subOrd);
+                }
+                if (newOrds.length > 0) {
+                  batchOrders.splice(idx, 1, ...newOrds);
+                  await renderBatchPreviewGrid();
+                  showBatchStatus('success', `✂️ 已成功將混單拆分為 ${newOrds.length} 筆獨立訂單，請確認圖片配對後再送出！`);
+                }
+              };
+              alertBox.appendChild(msgSpan);
+              alertBox.appendChild(splitBtn);
+            } else {
+              alertBox.style.background = '#fef3c7';
+              alertBox.style.border = '1px solid #f59e0b';
+              alertBox.style.color = '#92400e';
+              alertBox.textContent = `⚠️ 重複客戶／檔名（${ord.filename}），請確認是否與另一筆訂單重複或混單！`;
+            }
+            card.appendChild(alertBox);
           }
 
           const head = document.createElement('div');
