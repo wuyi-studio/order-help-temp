@@ -445,6 +445,115 @@
       max-width: 100%;
       border-radius: 6px;
     }
+
+    .cal-compare-drawer {
+      display: none;
+      background: #ffffff;
+      border: 2px solid #f43f5e;
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 6px 20px rgba(225, 29, 72, 0.08);
+    }
+
+    .cal-compare-drawer.open { display: block; }
+
+    .cal-summary-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 12px 0;
+    }
+
+    .cal-pill {
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #334155;
+    }
+
+    .cal-pill.missing {
+      background: #fee2e2;
+      border-color: #ef4444;
+      color: #b91c1c;
+      animation: pulseWarn 1.8s infinite;
+    }
+
+    .cal-pill.matched {
+      background: #dcfce7;
+      border-color: #22c55e;
+      color: #15803d;
+    }
+
+    .cal-pill.extra {
+      background: #fef3c7;
+      border-color: #f59e0b;
+      color: #92400e;
+    }
+
+    @keyframes pulseWarn {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+      50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    }
+
+    .cal-missing-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .cal-missing-card {
+      background: linear-gradient(135deg, #fff1f2 0%, #fef2f2 100%);
+      border: 2px solid #ef4444;
+      border-left: 7px solid #dc2626;
+      border-radius: 10px;
+      padding: 10px 12px;
+      box-shadow: 0 3px 10px rgba(220, 38, 38, 0.12);
+    }
+
+    .cal-missing-card .cal-tag {
+      display: inline-block;
+      background: #dc2626;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-right: 6px;
+    }
+
+    .cal-missing-card .cal-name {
+      font-size: 14px;
+      font-weight: 800;
+      color: #991b1b;
+    }
+
+    .cal-missing-card .cal-raw {
+      font-size: 12.5px;
+      color: #7f1d1d;
+      margin-top: 4px;
+      word-break: break-word;
+    }
+
+    .cal-matched-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .cal-matched-chip {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      color: #166534;
+    }
   </style>
 </head>
 <body>
@@ -459,6 +568,7 @@
       </div>
       <div class="header-actions">
         <button type="button" class="btn btn-soft" id="btnToggleBatch">📦 批次輸入</button>
+        <button type="button" class="btn btn-soft" id="btnToggleCalCompare">📅 日曆比對</button>
         <button type="button" class="btn btn-soft" id="btnReadClipboard">📋 讀取剪貼簿</button>
         <button type="button" class="btn" id="btnToggleSettings">⚙️ 網址設定</button>
       </div>
@@ -474,6 +584,31 @@
           <button type="button" class="btn btn-soft" id="btnSaveWebhook">儲存</button>
         </div>
       </div>
+    </div>
+
+    <div class="cal-compare-drawer" id="calendarCompareDrawer">
+      <div class="panel-title">
+        <span>📅 Google 日曆漏單比對（自動 HIGHLIGHT 缺少的訂單）</span>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <input type="date" id="calCompareDate" style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 5px 10px; font-size: 13px;">
+          <button type="button" class="btn btn-soft" id="btnFetchCalendar">🔄 從 Google 日曆自動抓取</button>
+          <button type="button" class="btn" id="btnCopyGasCalSnippet" style="font-size: 12px;">📋 複製日曆讀取 Code.gs</button>
+          <button type="button" class="btn" id="btnCloseCalCompare" style="font-size: 12px;">✕ 關閉</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-bottom: 8px;">
+        💡 方式 A：點「🔄 從 Google 日曆自動抓取」（若尚未在 Code.gs 加入 <code>doGet</code>，可點右方按鈕複製程式碼貼入 Apps Script 部署）。<br>
+        💡 方式 B：直接到 Google 日曆議程頁面（例：<code>calendar.google.com/.../agenda/2026/11/21</code>）按 <strong>Cmd+A → Cmd+C</strong> 貼入下方框內，立即比對！
+      </div>
+      <textarea id="calPasteInput" rows="4" placeholder="在此貼上 Google 日曆議程文字（支援整頁複製貼上，系統會自動過濾日期/時間雜訊，只抓訂單行程與目前批次訂單／單筆訂單比對）..."></textarea>
+      <div style="display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap;">
+        <button type="button" class="btn btn-primary" id="btnRunCalCompare" style="width: auto; padding: 9px 18px; font-size: 13.5px;">
+          🔍 立即比對並 HIGHLIGHT 漏單
+        </button>
+        <button type="button" class="btn" id="btnClearCalCompare">🗑️ 清空比對</button>
+        <span class="hint" id="calFetchStatus" style="margin-top: 0;"></span>
+      </div>
+      <div id="calCompareResults" style="display: none; margin-top: 12px;"></div>
     </div>
 
     <div class="batch-section" id="batchSection">
@@ -3993,6 +4128,295 @@ if (typeof module !== 'undefined' && module.exports) {
           `📦 批次送出完成：✅ 成功 ${okCount} 筆${failCount > 0 ? `、❌ 失敗 ${failCount} 筆（失敗卡片已標紅框，可點「🔁 重送」單獨重送）` : ''}！`
         );
       });
+
+      // ============================
+      // 📅 Google 日曆漏單比對功能
+      // ============================
+      const WUYI_CALENDAR_ID = '3270f49615dc743011c0b364d4325f4d373decda693135a144f69917660aa265@group.calendar.google.com';
+      const calendarCompareDrawer = document.getElementById('calendarCompareDrawer');
+      const calCompareDate = document.getElementById('calCompareDate');
+      const calPasteInput = document.getElementById('calPasteInput');
+      const calCompareResults = document.getElementById('calCompareResults');
+      const calFetchStatus = document.getElementById('calFetchStatus');
+
+      function inferTargetDateForCalendar() {
+        if (batchOrders.length > 0 && batchOrders[0].dateTag && /^\d{4}$/.test(batchOrders[0].dateTag)) {
+          const mm = batchOrders[0].dateTag.slice(0, 2);
+          const dd = batchOrders[0].dateTag.slice(2, 4);
+          return `2026-${mm}-${dd}`;
+        }
+        const dt = fieldDateTag.value.trim();
+        if (/^\d{4}$/.test(dt)) {
+          return `2026-${dt.slice(0, 2)}-${dt.slice(2, 4)}`;
+        }
+        return '2026-11-21';
+      }
+
+      calCompareDate.value = inferTargetDateForCalendar();
+
+      document.getElementById('btnToggleCalCompare').addEventListener('click', () => {
+        const isOpen = calendarCompareDrawer.classList.toggle('open');
+        if (isOpen) {
+          calCompareDate.value = inferTargetDateForCalendar();
+        }
+      });
+
+      document.getElementById('btnCloseCalCompare').addEventListener('click', () => {
+        calendarCompareDrawer.classList.remove('open');
+      });
+
+      document.getElementById('btnClearCalCompare').addEventListener('click', () => {
+        calPasteInput.value = '';
+        calCompareResults.style.display = 'none';
+        calCompareResults.innerHTML = '';
+        calFetchStatus.textContent = '';
+      });
+
+      document.getElementById('btnCopyGasCalSnippet').addEventListener('click', async () => {
+        const snippet = `function doGet(e) {
+  var action = (e && e.parameter && e.parameter.action) || '';
+  if (action === 'getCalendarEvents') {
+    var calId = (e.parameter.calendarId) || '${WUYI_CALENDAR_ID}';
+    var dateStr = (e.parameter.date) || Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+    var parts = dateStr.split('-');
+    var start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0);
+    var end = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59);
+    var cal = CalendarApp.getCalendarById(calId);
+    var events = cal ? cal.getEvents(start, end) : [];
+    var list = events.map(function(ev) {
+      return { title: ev.getTitle(), start: ev.getStartTime().toISOString() };
+    });
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', events: list }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ok' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}`;
+        try {
+          await navigator.clipboard.writeText(snippet);
+          calFetchStatus.textContent = '✅ 已複製 Code.gs 日曆讀取程式碼，請貼到 Apps Script 並重新部署！';
+        } catch (_) {
+          prompt('請複製以下 Code.gs 程式碼：', snippet);
+        }
+      });
+
+      document.getElementById('btnFetchCalendar').addEventListener('click', async () => {
+        const webhookUrl = getWebhookUrl();
+        if (!webhookUrl) {
+          calFetchStatus.textContent = '❌ 請先設定 Apps Script 網址';
+          return;
+        }
+        const dateStr = calCompareDate.value || '2026-11-21';
+        calFetchStatus.textContent = '⏳ 正在從 Google 日曆讀取行程...';
+        try {
+          const url = `${webhookUrl}?action=getCalendarEvents&date=${encodeURIComponent(dateStr)}&calendarId=${encodeURIComponent(WUYI_CALENDAR_ID)}`;
+          const res = await fetch(url);
+          const text = await res.text();
+          let data = null;
+          try { data = JSON.parse(text); } catch (_) {}
+          if (data && Array.isArray(data.events)) {
+            const titles = data.events.map(ev => ev.title || ev.summary || '').filter(Boolean);
+            calPasteInput.value = titles.join('\n');
+            calFetchStatus.textContent = `✅ 已讀取 ${titles.length} 筆日曆行程！`;
+            runCalendarComparison();
+          } else {
+            calFetchStatus.textContent = '⚠️ 目前 Code.gs 尚未支援讀取日曆，請點「📋 複製日曆讀取 Code.gs」更新部署，或直接從日曆頁面複製貼上文字！';
+          }
+        } catch (err) {
+          calFetchStatus.textContent = `⚠️ 讀取失敗（${err.message}），可直接從 Google 日曆頁面複製貼上文字！`;
+        }
+      });
+
+      function normalizeCompareName(str) {
+        if (!str) return '';
+        return str
+          .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+          .replace(/\(.*?\)|（.*?）/g, '')
+          .replace(/[\s\-_•·‧,，.。:：\/\\*＊!！?？~～]/g, '')
+          .toLowerCase()
+          .trim();
+      }
+
+      function parseCalendarEventsFromText(raw) {
+        if (!raw || !raw.trim()) return [];
+        const lines = raw.replace(/\r\n/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
+        const events = [];
+        for (const line of lines) {
+          // 過濾 Google 日曆議程頁面的非訂單雜訊
+          if (/^(?:\d{1,2}|20\d{2}年\d{1,2}月\d{1,2}日|\d{1,2}月\s*週[一二三四五六日]|週[一二三四五六日]|星期[一二三四五六日]|全天|今天|明天|昨天|(?:上午|下午)?\d{1,2}:\d{2})$/.test(line)) continue;
+          if (/^(?:0\.滿|00\.|滿單|公休|休息|現貨|搜尋|建立|日曆)/.test(line)) continue;
+          if (/^(?:WUYI\s*--\s*202\d|00\.\s*新)/.test(line)) continue;
+
+          // 僅保留像訂單的行程（含點、月/日格式、或商品符號）
+          const looksLikeOrder = /\d{1,2}[.\/-]\d{1,2}/.test(line) || /\d{1,2}\s*點/.test(line) || /[💐🎂🍔🌹🌸🔥🔫✅✍🏻\*＊]/.test(line);
+          if (!looksLikeOrder) continue;
+
+          events.push(extractCalendarEventMeta(line));
+        }
+        return events;
+      }
+
+      function extractCalendarEventMeta(title) {
+        let time12 = '';
+        let name = '';
+
+        // 格式 A: "11.21/3點 安🌸  *4可" 或 "11.21/7點 Win-兩顆 ＊4伯+可凍"
+        const mA = title.match(/(?:\d{1,2}[.\/-]\d{1,2}\s*[\/／]\s*)?(\d{1,2}\s*點(?:\s*半|\s*\d{1,2}分?)?)\s+(.+)/);
+        if (mA) {
+          time12 = mA[1].replace(/\s+/g, '');
+          const rest = mA[2].trim();
+          const mName = rest.match(/^([^\s*＊🍔💐🎂🌹🌸🔥🔫✅✍🏻(（\-－]+)/);
+          name = mName ? mName[1].trim() : rest.split(/\s+/)[0];
+        } else {
+          // 格式 B: "泱💐精✅沒寫🍔11/21加水果款" 或 "陳盈如💐✅..."
+          const mB = title.match(/^([^\s💐🎂🍔🌹🌸🔥🔫✅✍🏻*＊(（\d]+)/);
+          if (mB) name = mB[1].trim();
+        }
+
+        const normName = normalizeCompareName(name);
+        return {
+          rawTitle: title,
+          time12,
+          displayName: name || title,
+          normName
+        };
+      }
+
+      function getCurrentOrdersForCompare() {
+        if (batchOrders.length > 0) {
+          return batchOrders.map(ord => {
+            const st = ord.state || {};
+            const lineName = (st.customer && st.customer.lineName) || '';
+            const custName = (st.customer && st.customer.name) || '';
+            const time12 = format12HourTime((st.pickup && st.pickup.time) || '');
+            return {
+              label: ord.filename || `${ord.dateTag} ${lineName || custName}`,
+              lineName,
+              custName,
+              normLine: normalizeCompareName(lineName),
+              normCust: normalizeCompareName(custName),
+              normFile: normalizeCompareName((ord.filename || '').replace(/\.png$/i, '')),
+              time12
+            };
+          });
+        }
+        // 單筆模式
+        syncFieldsToState();
+        const lineName = fieldLineName.value.trim();
+        const custName = fieldCustomerName.value.trim();
+        if (!lineName && !custName) return [];
+        const time12 = format12HourTime(fieldPickupTime.value.trim());
+        const dt = fieldDateTag.value.trim() || inferDateTag(fieldPickupDate.value.trim());
+        return [{
+          label: buildCardFilename(dt, fieldPickupTime.value.trim(), lineName || custName),
+          lineName,
+          custName,
+          normLine: normalizeCompareName(lineName),
+          normCust: normalizeCompareName(custName),
+          normFile: normalizeCompareName(`${lineName}${custName}`),
+          time12
+        }];
+      }
+
+      function doesEventMatchOrder(ev, ord) {
+        if (!ev.normName) return false;
+        const candidates = [ord.normLine, ord.normCust].filter(Boolean);
+        for (const c of candidates) {
+          if (c === ev.normName) return true;
+          if (c.length >= 2 && ev.normName.length >= 2 && (c.includes(ev.normName) || ev.normName.includes(c))) return true;
+          if (ev.normName.length === 1 && (c === ev.normName || c.endsWith(ev.normName) || c.startsWith(ev.normName))) return true;
+        }
+        if (ord.normFile && ev.normName.length >= 2 && ord.normFile.includes(ev.normName)) return true;
+        return false;
+      }
+
+      function runCalendarComparison() {
+        const events = parseCalendarEventsFromText(calPasteInput.value);
+        if (events.length === 0) {
+          calFetchStatus.textContent = '⚠️ 尚未偵測到有效的日曆行程，請貼上 Google 日曆議程文字或點「從 Google 日曆自動抓取」。';
+          calCompareResults.style.display = 'none';
+          return;
+        }
+
+        const orders = getCurrentOrdersForCompare();
+        const matchedPairs = [];
+        const missingFromOrders = [];
+        const matchedOrderIndices = new Set();
+
+        for (const ev of events) {
+          let bestIdx = -1;
+          for (let i = 0; i < orders.length; i++) {
+            if (doesEventMatchOrder(ev, orders[i])) {
+              if (bestIdx === -1) {
+                bestIdx = i;
+              } else if (ev.time12 && orders[i].time12 === ev.time12 && orders[bestIdx].time12 !== ev.time12) {
+                bestIdx = i;
+              }
+            }
+          }
+          if (bestIdx !== -1) {
+            matchedOrderIndices.add(bestIdx);
+            matchedPairs.push({ ev, ord: orders[bestIdx] });
+          } else {
+            missingFromOrders.push(ev);
+          }
+        }
+
+        const extraOrders = orders.filter((_, idx) => !matchedOrderIndices.has(idx));
+
+        let html = `
+          <div class="cal-summary-bar">
+            <span class="cal-pill">📅 日曆行程：${events.length} 筆</span>
+            <span class="cal-pill matched">✅ 已對上：${matchedPairs.length} 筆</span>
+            <span class="cal-pill ${missingFromOrders.length > 0 ? 'missing' : 'matched'}">🔴 缺少漏單：${missingFromOrders.length} 筆</span>
+            ${extraOrders.length > 0 ? `<span class="cal-pill extra">🟡 僅訂單有：${extraOrders.length} 筆</span>` : ''}
+          </div>
+        `;
+
+        if (missingFromOrders.length > 0) {
+          html += `<div style="font-size: 13.5px; font-weight: 800; color: #b91c1c; margin-top: 8px;">🚨 以下 ${missingFromOrders.length} 筆在 Google 日曆有紀錄，但目前訂單中「缺少」（已 HIGHLIGHT）：</div>`;
+          html += `<div class="cal-missing-list">`;
+          for (const ev of missingFromOrders) {
+            html += `
+              <div class="cal-missing-card">
+                <div>
+                  <span class="cal-tag">缺少</span>
+                  ${ev.time12 ? `<span class="cal-tag" style="background:#f59e0b;">${ev.time12}</span>` : ''}
+                  <span class="cal-name">${ev.displayName.replace(/</g, '&lt;')}</span>
+                </div>
+                <div class="cal-raw">${ev.rawTitle.replace(/</g, '&lt;')}</div>
+              </div>
+            `;
+          }
+          html += `</div>`;
+        } else {
+          html += `<div style="padding: 10px 14px; background: #dcfce7; border: 1px solid #86efac; border-radius: 10px; color: #166534; font-weight: 700; font-size: 13px;">🎉 太棒了！日曆上的 ${events.length} 筆訂單全部都有對上，沒有漏單！</div>`;
+        }
+
+        if (matchedPairs.length > 0) {
+          html += `<div style="font-size: 12.5px; font-weight: 700; color: #166534; margin-top: 12px;">✅ 已核對成功（${matchedPairs.length} 筆）：</div><div class="cal-matched-list">`;
+          for (const p of matchedPairs) {
+            html += `<span class="cal-matched-chip">${p.ev.displayName.replace(/</g, '&lt;')} ↔ ${p.ord.label.replace(/</g, '&lt;')}</span>`;
+          }
+          html += `</div>`;
+        }
+
+        if (extraOrders.length > 0) {
+          html += `<div style="font-size: 12.5px; font-weight: 700; color: #92400e; margin-top: 10px;">🟡 僅訂單中有、日曆未找到（${extraOrders.length} 筆）：</div><div class="cal-matched-list">`;
+          for (const o of extraOrders) {
+            html += `<span class="cal-matched-chip" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;">${o.label.replace(/</g, '&lt;')}</span>`;
+          }
+          html += `</div>`;
+        }
+
+        calCompareResults.innerHTML = html;
+        calCompareResults.style.display = 'block';
+        calFetchStatus.textContent = orders.length === 0
+          ? '⚠️ 目前尚未匯入/解析任何訂單，因此所有日曆行程都標記為「缺少」！'
+          : `✅ 比對完成（共比對 ${orders.length} 筆訂單）`;
+      }
+
+      document.getElementById('btnRunCalCompare').addEventListener('click', runCalendarComparison);
     })();
   </script>
 </body>
