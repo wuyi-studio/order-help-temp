@@ -590,7 +590,9 @@
       <div class="panel-title">
         <span>📅 Google 日曆漏單比對（自動 HIGHLIGHT 缺少的訂單）</span>
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-          <input type="date" id="calCompareDate" style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 5px 10px; font-size: 13px;">
+          <input type="date" id="calCompareDate" title="開始日期" style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 5px 10px; font-size: 13px;">
+          <span style="font-size: 13px; color: #64748b; font-weight: 700;">～</span>
+          <input type="date" id="calCompareEndDate" title="結束日期（可選日期區間）" style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 5px 10px; font-size: 13px;">
           <button type="button" class="btn btn-soft" id="btnFetchCalendar">🔄 從 Google 日曆自動抓取</button>
           <button type="button" class="btn btn-soft" id="btnCheckCloudDay">🔍 雲端查單 (Drive＋試算表)</button>
           <button type="button" class="btn" id="btnCopyGasCalSnippet" style="font-size: 12px;">📋 複製日曆讀取 Code.gs</button>
@@ -617,10 +619,22 @@
         <div class="panel-title">
           <span>📦 批次輸入多筆訂單（直接拖曳或匯入 .pages / .docx，自動分單配圖＋預視）</span>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <input type="file" id="batchPagesFile" accept=".pages,.docx" style="display: none;">
+            <input type="file" id="batchPagesFile" accept=".pages,.docx" multiple style="display: none;">
             <button type="button" class="btn btn-soft" id="btnBatchImportPages">📄 匯入 Pages / Word 檔</button>
             <button type="button" class="btn btn-soft" id="btnBatchParse">⚡ 解析並預視全部</button>
             <button type="button" class="btn" id="btnBatchClear">🗑️ 清空批次</button>
+          </div>
+        </div>
+        <div id="multiPagesBox" class="images-section" style="margin-bottom: 12px; background: #fff7ed; border-color: #fdba74;">
+          <div class="images-header" style="flex-wrap: wrap;">
+            <strong style="font-size: 13px; color: #9a3412;">📚 多個 Pages 同時匯入／補單區（可一次選取或分批拖曳多個 .pages / .docx，合併送進 Drive ＋ 試算表）</strong>
+            <div style="display: flex; gap: 6px;">
+              <input type="file" id="multiPagesInput" accept=".pages,.docx" multiple style="display: none;">
+              <button type="button" class="btn btn-soft" id="btnMultiPagesAdd" style="padding: 5px 12px; font-size: 12px; border-color: #fb923c; color: #9a3412; background: #ffedd5;">＋ 選擇／追加多個 Pages 檔</button>
+            </div>
+          </div>
+          <div id="multiPagesFileList" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;">
+            <span class="hint" style="margin-top: 0;">尚未加入 Pages 檔案（可一次全選多個 .pages 檔，或分次拖曳進來自動累積合併）</span>
           </div>
         </div>
         <div id="batchImagesTray" class="images-section" style="display: none; margin-bottom: 12px;">
@@ -642,6 +656,12 @@
         <div class="status-box" id="batchStatusBox"></div>
         <div class="batch-grid" id="batchPreviewList"></div>
       </div>
+    </div>
+
+    <div id="backToBatchBar" style="display: none; margin-bottom: 12px;">
+      <button type="button" class="btn btn-soft" id="btnBackToBatch" style="width: 100%; justify-content: center; padding: 10px 16px; font-size: 14px; border-color: #fb923c; background: #fff7ed; color: #9a3412;">
+        ← 返回批次輸入多筆訂單
+      </button>
     </div>
 
     <div class="grid" id="singleModeGrid">
@@ -3214,6 +3234,8 @@ if (typeof module !== 'undefined' && module.exports) {
       const btnToggleBatch = document.getElementById('btnToggleBatch');
       const batchSection = document.getElementById('batchSection');
       const singleModeGrid = document.getElementById('singleModeGrid');
+      const backToBatchBar = document.getElementById('backToBatchBar');
+      const btnBackToBatch = document.getElementById('btnBackToBatch');
       const batchRawInput = document.getElementById('batchRawInput');
       const batchPreviewList = document.getElementById('batchPreviewList');
       const batchCountHint = document.getElementById('batchCountHint');
@@ -3223,6 +3245,11 @@ if (typeof module !== 'undefined' && module.exports) {
       const btnBatchSendAll = document.getElementById('btnBatchSendAll');
       const batchPagesFile = document.getElementById('batchPagesFile');
       const btnBatchImportPages = document.getElementById('btnBatchImportPages');
+      const multiPagesInput = document.getElementById('multiPagesInput');
+      const btnMultiPagesAdd = document.getElementById('btnMultiPagesAdd');
+      const multiPagesFileList = document.getElementById('multiPagesFileList');
+      const multiPagesBox = document.getElementById('multiPagesBox');
+      let loadedPagesFiles = []; // { name, ordersCount, imagesCount }
       const batchImagesTray = document.getElementById('batchImagesTray');
       const batchImagesList = document.getElementById('batchImagesList');
 
@@ -3563,12 +3590,19 @@ if (typeof module !== 'undefined' && module.exports) {
       }
 
       async function buildBatchOrderObj(rawChunk, idx, attachedImgs = []) {
-        // 移除檔案開頭單獨的日期標題列或「＝＝＝」分隔列，保留真正訂單內容
+        // 移除檔案開頭單獨的日期標題列（含 ✅ 等符號）、加總統計列（總訂單數 / 當日總金額）或「＝＝＝」分隔列，保留真正訂單內容
         const cleaned = rawChunk
           .replace(/\uFFFC/g, '')
-          .replace(/^(?:\d{4}年\d{1,2}月\d{1,2}日\s*,?\s*\n+|[,，＝=—\-_]{1,}\s*\n*)+/g, '')
+          .replace(/^\s*\d{4}年\d{1,2}月\d{1,2}日[^\n]*$/gm, '')
+          .replace(/^\s*(?:總訂單數|當日總金額|總金額|訂單總數|當日訂單數|合計訂單|本日總金額|本日總訂單數)[：:\s].*$/gm, '')
+          .replace(/^(?:[,，＝=—\-_]{1,}\s*\n*)+/g, '')
+          .replace(/\n{3,}/g, '\n\n')
           .trim();
-        if (!cleaned || cleaned.replace(/[\s,，.。＝=—\-_]/g, '').length < 5) {
+        if (!cleaned || cleaned.replace(/[\s,，.。＝=—\-_✅]/g, '').length < 5) {
+          return null;
+        }
+        // 若整段沒有任何訂單欄位特徵（例如只剩日期標題或雜訊），直接略過不建卡
+        if (!/(?:取貨日期|自取日期|訂購人|取貨人|收件人|蛋糕|花束|電話|預算|題字|\$)/.test(cleaned)) {
           return null;
         }
         const st = (window.Extractor && typeof window.Extractor.parseOrderText === 'function')
@@ -3618,7 +3652,7 @@ if (typeof module !== 'undefined' && module.exports) {
         const phoneIndices = [];
         for (let i = 0; i < lineInfos.length; i++) {
           const t = lineInfos[i].text.trim().replace(/^[•·‧↳]\s*/, '');
-          if (/^(?:訂購人|聯絡)?電話\s*[：:]/.test(t)) {
+          if (/^(?:訂購人|聯絡|取貨人|收件人)?(?:的)?電話\s*[：:]/.test(t)) {
             phoneIndices.push(i);
           }
         }
@@ -3634,7 +3668,7 @@ if (typeof module !== 'undefined' && module.exports) {
               splitLineIdx++;
               continue;
             }
-            if (/^(?:蛋糕|漢堡盒|花束|餐具|蠟燭|保冰|保冷|插牌|提袋|預估應付總額|應付總額|總金額|總共|合計|總計|總額|＝|=|收\s*\d+|\d+\s*[\+＋\-＝=])/.test(t) || /^\d{2,5}$/.test(t)) {
+            if (/^(?:蛋糕|漢堡盒|花束|兩人|2人|五人|5人|十人|10人|餐具|蠟燭|造型|數字|扭曲|保冰|保冷|插牌|提袋|預估應付總額|應付總額|總金額|總共|合計|總計|總額|＝|=|收\s*\d+|\d+\s*[\+＋\-＝=])/.test(t) || /^\d{2,5}$/.test(t) || /^(?:[^\n]*?(?:\$|＊|\*)\s*\d+(?:\s*[\+＋\*]\s*\d+)*)$/.test(t)) {
               splitLineIdx++;
               continue;
             }
@@ -3707,15 +3741,37 @@ if (typeof module !== 'undefined' && module.exports) {
         return finalRanges;
       }
 
-      async function importBatchFile(file) {
-        if (!file) return;
+      function renderMultiPagesFileList() {
+        if (!multiPagesFileList) return;
+        multiPagesFileList.innerHTML = '';
+        if (loadedPagesFiles.length === 0) {
+          multiPagesFileList.innerHTML = '<span class="hint" style="margin-top: 0;">尚未加入 Pages 檔案（可一次全選多個 .pages 檔，或分次拖曳進來自動累積合併）</span>';
+          return;
+        }
+        loadedPagesFiles.forEach((fInfo) => {
+          const pill = document.createElement('span');
+          pill.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #ffffff; border: 1px solid #fb923c; color: #9a3412; font-size: 12px; font-weight: 600;';
+          pill.textContent = `📄 ${fInfo.name}（${fInfo.ordersCount} 筆 / ${fInfo.imagesCount} 圖）`;
+          multiPagesFileList.appendChild(pill);
+        });
+      }
+
+      async function importBatchFile(file, options = {}) {
+        if (!file) return { ordersAdded: 0, imagesAdded: 0 };
+        const append = Boolean(options.append);
         showBatchStatus('info', `⏳ 正在讀取 ${file.name}（解析文字與圖片）...`);
         try {
           const buf = await file.arrayBuffer();
           const entries = await parseZipEntries(buf);
-          batchExtractedImages = [];
+          if (!append) {
+            batchExtractedImages = [];
+            batchOrders = [];
+            batchRawInput.value = '';
+            loadedPagesFiles = [];
+          }
           const mimeMap = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
           const entryDataUrlMap = new Map();
+          let fileImagesCount = 0;
 
           for (const ent of entries) {
             const lower = ent.name.toLowerCase();
@@ -3730,6 +3786,7 @@ if (typeof module !== 'undefined' && module.exports) {
                   entryDataUrlMap.set(base, dataUrl);
                   entryDataUrlMap.set(ent.name, dataUrl);
                   batchExtractedImages.push({ id: `${Date.now()}_${batchExtractedImages.length}`, name: base, dataUrl });
+                  fileImagesCount++;
                 }
               }
             }
@@ -3739,9 +3796,15 @@ if (typeof module !== 'undefined' && module.exports) {
           const pagesData = await extractPagesIwaContent(entries);
           if (pagesData && pagesData.text) {
             const rawText = pagesData.text;
-            batchRawInput.value = rawText.replace(/\uFFFC/g, '');
+            const cleanNewText = rawText.replace(/\uFFFC/g, '').trim();
+            if (cleanNewText) {
+              batchRawInput.value = batchRawInput.value.trim()
+                ? `${batchRawInput.value.trim()}\n\n\n\n\n\n${cleanNewText}`
+                : cleanNewText;
+            }
             const ranges = splitTextWithRanges(rawText);
-            batchOrders = [];
+            const startIdx = batchOrders.length;
+            let addedCount = 0;
             for (let i = 0; i < ranges.length; i++) {
               const rng = ranges[i];
               // 判斷花束與蛋糕邊界（2️⃣ 或 🎂 出現的位置）
@@ -3763,16 +3826,25 @@ if (typeof module !== 'undefined' && module.exports) {
                   }
                 }
               }
-              const ord = await buildBatchOrderObj(rng.text, i, chunkImgs);
-              if (ord) batchOrders.push(ord);
+              const ord = await buildBatchOrderObj(rng.text, startIdx + addedCount, chunkImgs);
+              if (ord) {
+                ord.sourceFile = file.name;
+                batchOrders.push(ord);
+                addedCount++;
+              }
             }
-            renderBatchExtractedTray();
-            await renderBatchPreviewGrid();
-            showBatchStatus('success', `✅ 已從 ${file.name} 自動解析 ${batchOrders.length} 筆訂單、配對 ${pagesData.attachments.length} 張圖片並產生全部預覽！`);
-            return;
+            loadedPagesFiles.push({ name: file.name, ordersCount: addedCount, imagesCount: pagesData.attachments.length || fileImagesCount });
+            renderMultiPagesFileList();
+            if (!options.deferRender) {
+              renderBatchExtractedTray();
+              await renderBatchPreviewGrid();
+              showBatchStatus('success', `✅ 已從 ${file.name} 解析 ${addedCount} 筆訂單、配對 ${pagesData.attachments.length} 張圖片（累計共 ${batchOrders.length} 筆）！`);
+            }
+            return { ordersAdded: addedCount, imagesAdded: pagesData.attachments.length || fileImagesCount };
           }
 
           // 若為 .docx，讀取 word/document.xml 文字並自動預視
+          let docxText = '';
           const docxEntry = entries.find(e => e.name.toLowerCase() === 'word/document.xml');
           if (docxEntry) {
             const rawBytes = await decompressZipEntry(docxEntry);
@@ -3780,26 +3852,92 @@ if (typeof module !== 'undefined' && module.exports) {
               const xmlStr = new TextDecoder('utf-8').decode(rawBytes);
               const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
               const paras = Array.from(doc.getElementsByTagName('w:p'));
-              batchRawInput.value = paras.map(p => p.textContent || '').join('\n').trim();
+              docxText = paras.map(p => p.textContent || '').join('\n').trim();
             }
           }
 
-          renderBatchExtractedTray();
-          if (batchRawInput.value.trim()) {
-            await parseBatchFromTextarea();
-          } else {
-            showBatchStatus('success', `✅ 已從 ${file.name} 擷取 ${batchExtractedImages.length} 張圖片！`);
+          let addedDocxOrders = 0;
+          if (docxText) {
+            batchRawInput.value = batchRawInput.value.trim()
+              ? `${batchRawInput.value.trim()}\n\n\n\n\n\n${docxText}`
+              : docxText;
+            const chunks = splitBatchOrderTexts(docxText);
+            const startIdx = batchOrders.length;
+            for (let i = 0; i < chunks.length; i++) {
+              const ord = await buildBatchOrderObj(chunks[i], startIdx + addedDocxOrders, []);
+              if (ord) {
+                ord.sourceFile = file.name;
+                batchOrders.push(ord);
+                addedDocxOrders++;
+              }
+            }
           }
+          loadedPagesFiles.push({ name: file.name, ordersCount: addedDocxOrders, imagesCount: fileImagesCount });
+          renderMultiPagesFileList();
+          if (!options.deferRender) {
+            renderBatchExtractedTray();
+            await renderBatchPreviewGrid();
+            showBatchStatus('success', `✅ 已匯入 ${file.name}（${addedDocxOrders} 筆訂單、${fileImagesCount} 張圖片，累計共 ${batchOrders.length} 筆）！`);
+          }
+          return { ordersAdded: addedDocxOrders, imagesAdded: fileImagesCount };
         } catch (err) {
-          showBatchStatus('error', `❌ 讀取檔案失敗：${err.message}`);
+          showBatchStatus('error', `❌ 讀取 ${file.name} 失敗：${err.message}`);
+          return { ordersAdded: 0, imagesAdded: 0 };
         }
+      }
+
+      async function importMultipleBatchFiles(fileList, options = {}) {
+        const docFiles = Array.from(fileList || []).filter(f => /\.(pages|docx)$/i.test(f.name || ''));
+        if (docFiles.length === 0) return;
+        const startWithAppend = Boolean(options.append);
+        let totalAddedOrders = 0;
+        let totalAddedImages = 0;
+        for (let i = 0; i < docFiles.length; i++) {
+          const shouldAppend = startWithAppend || i > 0;
+          const res = await importBatchFile(docFiles[i], { append: shouldAppend, deferRender: true });
+          totalAddedOrders += res.ordersAdded;
+          totalAddedImages += res.imagesAdded;
+        }
+        renderBatchExtractedTray();
+        await renderBatchPreviewGrid();
+        showBatchStatus('success', `✅ 已完成匯入 ${docFiles.length} 個檔案（本次新增 ${totalAddedOrders} 筆訂單、${totalAddedImages} 張圖片；目前累計共 ${batchOrders.length} 筆可同時送出至 Drive ＋ 試算表）！`);
       }
 
       btnBatchImportPages.addEventListener('click', () => batchPagesFile.click());
       batchPagesFile.addEventListener('change', async (e) => {
-        const file = e.target.files && e.target.files[0];
+        const files = Array.from(e.target.files || []);
         batchPagesFile.value = '';
-        await importBatchFile(file);
+        if (files.length === 1 && loadedPagesFiles.length === 0) {
+          await importBatchFile(files[0], { append: false });
+        } else if (files.length > 0) {
+          await importMultipleBatchFiles(files, { append: loadedPagesFiles.length > 0 });
+        }
+      });
+
+      btnMultiPagesAdd.addEventListener('click', () => multiPagesInput.click());
+      multiPagesInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        multiPagesInput.value = '';
+        if (files.length > 0) {
+          await importMultipleBatchFiles(files, { append: true });
+        }
+      });
+
+      multiPagesBox.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        multiPagesBox.style.background = '#ffedd5';
+      });
+      multiPagesBox.addEventListener('dragleave', () => {
+        multiPagesBox.style.background = '#fff7ed';
+      });
+      multiPagesBox.addEventListener('drop', async (e) => {
+        const docFiles = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter(f => /\.(pages|docx)$/i.test(f.name || ''));
+        if (docFiles.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          multiPagesBox.style.background = '#fff7ed';
+          await importMultipleBatchFiles(docFiles, { append: true });
+        }
       });
 
       const batchDropPanel = document.getElementById('batchDropPanel');
@@ -3811,12 +3949,11 @@ if (typeof module !== 'undefined' && module.exports) {
         batchDropPanel.style.borderColor = '';
       });
       batchDropPanel.addEventListener('drop', async (e) => {
-        const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
-        const docFile = files.find(f => /\.(pages|docx)$/i.test(f.name || ''));
-        if (docFile) {
+        const docFiles = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter(f => /\.(pages|docx)$/i.test(f.name || ''));
+        if (docFiles.length > 0) {
           e.preventDefault();
           batchDropPanel.style.borderColor = '';
-          await importBatchFile(docFile);
+          await importMultipleBatchFiles(docFiles, { append: loadedPagesFiles.length > 0 });
         }
       });
 
@@ -3825,10 +3962,26 @@ if (typeof module !== 'undefined' && module.exports) {
         batchStatusBox.innerHTML = html;
       }
 
+      function updateBackToBatchBar() {
+        if (!backToBatchBar) return;
+        const inSingleMode = !batchSection.classList.contains('open');
+        backToBatchBar.style.display = (inSingleMode && batchOrders.length > 0) ? 'block' : 'none';
+      }
+
+      if (btnBackToBatch) {
+        btnBackToBatch.addEventListener('click', () => {
+          batchSection.classList.add('open');
+          singleModeGrid.style.display = 'none';
+          btnToggleBatch.textContent = '📝 返回單筆模式';
+          updateBackToBatchBar();
+        });
+      }
+
       btnToggleBatch.addEventListener('click', () => {
         const isBatch = batchSection.classList.toggle('open');
         singleModeGrid.style.display = isBatch ? 'none' : '';
         btnToggleBatch.textContent = isBatch ? '📝 返回單筆模式' : '📦 批次輸入';
+        updateBackToBatchBar();
       });
 
       function splitBatchOrderTexts(raw) {
@@ -3870,7 +4023,7 @@ if (typeof module !== 'undefined' && module.exports) {
 
         for (const line of lines) {
           const t = line.trim().replace(/^[•·‧↳]\s*/, '');
-          const mPhone = t.match(/^(?:訂購人|聯絡)?電話\s*[：:]\s*([^\s].*)$/);
+          const mPhone = t.match(/^(?:訂購人|聯絡|取貨人|收件人)?(?:的)?電話\s*[：:]\s*([^\s].*)$/);
           if (mPhone) {
             const p = mPhone[1].replace(/[-\s]/g, '');
             if (p && !phoneSet.has(p)) {
@@ -3905,26 +4058,36 @@ if (typeof module !== 'undefined' && module.exports) {
         if (!rawText || typeof rawText !== 'string') return [rawText];
         const lines = rawText.replace(/\r\n/g, '\n').split('\n');
         const phoneLineIndices = [];
+        const dateLineIndices = [];
         for (let i = 0; i < lines.length; i++) {
           const t = lines[i].trim().replace(/^[•·‧↳]\s*/, '');
-          if (/^(?:訂購人|聯絡)?電話\s*[：:]/.test(t)) {
+          if (/^(?:訂購人|聯絡|取貨人|收件人)?(?:的)?電話\s*[：:]/.test(t)) {
             phoneLineIndices.push(i);
           }
+          if (/^(?:取貨|自取)?日期\s*[：:]/.test(t)) {
+            dateLineIndices.push(i);
+          }
         }
-        if (phoneLineIndices.length < 2) return [rawText];
+
+        const isTailLine = (t) => {
+          if (!t) return true;
+          const clean = t.replace(/^[•·‧↳]\s*/, '');
+          if (/^(?:取貨時間|取貨地點|自取地點|取貨地址|門市附贈卡片|預估應付總額|應付總額|總金額|總共|合計|總計|總額|＝|=|收\s*\d+|\d+\s*[\+＋\-＝=])/.test(clean)) return true;
+          if (/^(?:蛋糕|漢堡盒|花束|兩人|2人|五人|5人|十人|10人|餐具|蠟燭|造型|數字|扭曲|保冰|保冷|插牌|提袋)/.test(clean) && /\d/.test(clean)) return true;
+          if (/^\d{2,5}$/.test(clean) || /^(?:[^\n]*?(?:\$|＊|\*)\s*\d+(?:\s*[\+＋\*]\s*\d+)*)$/.test(clean)) return true;
+          return false;
+        };
+
+        const anchorIndices = phoneLineIndices.length >= 2 ? phoneLineIndices : (dateLineIndices.length >= 2 ? dateLineIndices : []);
+        if (anchorIndices.length < 2) return [rawText];
 
         const chunks = [];
         let startIdx = 0;
-        for (let p = 0; p < phoneLineIndices.length - 1; p++) {
-          let splitAt = phoneLineIndices[p] + 1;
-          // 跳過該筆訂單緊接在電話後面的金額明細與空行
-          while (splitAt < lines.length) {
+        for (let p = 0; p < anchorIndices.length - 1; p++) {
+          let splitAt = anchorIndices[p] + 1;
+          while (splitAt < lines.length && splitAt < anchorIndices[p + 1]) {
             const t = lines[splitAt].trim();
-            if (!t) {
-              splitAt++;
-              continue;
-            }
-            if (/^(?:蛋糕|漢堡盒|花束|餐具|蠟燭|保冰|保冷|插牌|提袋|預估應付總額|應付總額|總金額|總共|合計|總計|總額|＝|=|收\s*\d+|\d+\s*[\+＋\-＝=])/.test(t) || /^\d{2,5}$/.test(t)) {
+            if (isTailLine(t)) {
               splitAt++;
               continue;
             }
@@ -4019,6 +4182,10 @@ if (typeof module !== 'undefined' && module.exports) {
 
       async function renderBatchPreviewGrid() {
         dedupeBatchFilenames();
+        // 將有警示的訂單（混單 / 送出失敗 / 重複檔名或電話）移到最上面
+        const alertRank = (o) => (o.mergedAlert || o.sendStatus === 'error') ? 0 : ((o.isDuplicateName || o.isDuplicatePhone) ? 1 : 2);
+        batchOrders.sort((a, b) => alertRank(a) - alertRank(b));
+        updateBackToBatchBar();
         batchPreviewList.innerHTML = '';
         const mergedCount = batchOrders.filter(o => o.mergedAlert).length;
         const dupCount = batchOrders.filter(o => o.isDuplicateName || o.isDuplicatePhone).length;
@@ -4061,7 +4228,10 @@ if (typeof module !== 'undefined' && module.exports) {
               splitBtn.textContent = '✂️ 自動拆成獨立訂單';
               splitBtn.onclick = async () => {
                 const parts = splitMergedOrderText(ord.rawText);
-                if (parts.length < 2) return;
+                if (parts.length < 2) {
+                  showBatchStatus('warn', '⚠️ 無法自動判斷拆單邊界，請點「✏️ 單筆編輯」手動檢查內容。');
+                  return;
+                }
                 const newOrds = [];
                 for (let k = 0; k < parts.length; k++) {
                   const subOrd = await buildBatchOrderObj(parts[k], idx + k, k === 0 ? (ord.images || []) : []);
@@ -4088,7 +4258,7 @@ if (typeof module !== 'undefined' && module.exports) {
           head.className = 'batch-card-head';
           const title = document.createElement('strong');
           title.style.fontSize = '13px';
-          title.textContent = `#${idx + 1} ${ord.filename}`;
+          title.textContent = `#${idx + 1} ${ord.filename}` + (ord.sourceFile ? ` 〔${ord.sourceFile}〕` : '');
 
           const actions = document.createElement('div');
           actions.style.display = 'flex';
@@ -4157,6 +4327,8 @@ if (typeof module !== 'undefined' && module.exports) {
             batchSection.classList.remove('open');
             singleModeGrid.style.display = '';
             btnToggleBatch.textContent = '📦 批次輸入';
+            updateBackToBatchBar();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
           };
 
           const btnDel = document.createElement('button');
@@ -4357,10 +4529,13 @@ if (typeof module !== 'undefined' && module.exports) {
         batchOrders = [];
         batchExtractedImages = [];
         batchNextAttachIdx = 0;
+        loadedPagesFiles = [];
+        renderMultiPagesFileList();
         renderBatchExtractedTray();
         batchPreviewList.innerHTML = '';
         batchCountHint.textContent = '尚未解析訂單';
         batchStatusBox.className = 'status-box';
+        updateBackToBatchBar();
       });
 
       btnBatchSendAll.addEventListener('click', async () => {
@@ -4404,6 +4579,7 @@ if (typeof module !== 'undefined' && module.exports) {
       const WUYI_CALENDAR_ID = '3270f49615dc743011c0b364d4325f4d373decda693135a144f69917660aa265@group.calendar.google.com';
       const calendarCompareDrawer = document.getElementById('calendarCompareDrawer');
       const calCompareDate = document.getElementById('calCompareDate');
+      const calCompareEndDate = document.getElementById('calCompareEndDate');
       const calPasteInput = document.getElementById('calPasteInput');
       const calCompareResults = document.getElementById('calCompareResults');
       const calFetchStatus = document.getElementById('calFetchStatus');
@@ -4421,12 +4597,44 @@ if (typeof module !== 'undefined' && module.exports) {
         return '2026-11-21';
       }
 
-      calCompareDate.value = inferTargetDateForCalendar();
+      const initCalDate = inferTargetDateForCalendar();
+      calCompareDate.value = initCalDate;
+      if (calCompareEndDate) calCompareEndDate.value = initCalDate;
+
+      calCompareDate.addEventListener('change', () => {
+        if (calCompareEndDate && (!calCompareEndDate.value || calCompareEndDate.value < calCompareDate.value)) {
+          calCompareEndDate.value = calCompareDate.value;
+        }
+      });
+
+      function getCalendarDateRangeList() {
+        const startStr = calCompareDate.value || '2026-11-21';
+        const endStr = (calCompareEndDate && calCompareEndDate.value && calCompareEndDate.value >= startStr)
+          ? calCompareEndDate.value
+          : startStr;
+        const dates = [];
+        const cur = new Date(`${startStr}T00:00:00`);
+        const end = new Date(`${endStr}T00:00:00`);
+        let guard = 0;
+        while (cur <= end && guard < 31) {
+          const y = cur.getFullYear();
+          const m = String(cur.getMonth() + 1).padStart(2, '0');
+          const d = String(cur.getDate()).padStart(2, '0');
+          dates.push(`${y}-${m}-${d}`);
+          cur.setDate(cur.getDate() + 1);
+          guard++;
+        }
+        return { startStr, endStr, dates };
+      }
 
       document.getElementById('btnToggleCalCompare').addEventListener('click', () => {
         const isOpen = calendarCompareDrawer.classList.toggle('open');
         if (isOpen) {
-          calCompareDate.value = inferTargetDateForCalendar();
+          const inferred = inferTargetDateForCalendar();
+          calCompareDate.value = inferred;
+          if (calCompareEndDate && (!calCompareEndDate.value || calCompareEndDate.value < inferred)) {
+            calCompareEndDate.value = inferred;
+          }
         }
       });
 
@@ -4475,18 +4683,27 @@ if (typeof module !== 'undefined' && module.exports) {
           calFetchStatus.textContent = '❌ 請先設定 Apps Script 網址';
           return;
         }
-        const dateStr = calCompareDate.value || '2026-11-21';
-        calFetchStatus.textContent = '⏳ 正在從 Google 日曆讀取行程...';
+        const { startStr, endStr, dates } = getCalendarDateRangeList();
+        const rangeLabel = startStr === endStr ? startStr : `${startStr} ～ ${endStr}（共 ${dates.length} 天）`;
+        calFetchStatus.textContent = `⏳ 正在從 Google 日曆讀取 ${rangeLabel} 行程...`;
         try {
-          const url = `${webhookUrl}?action=getCalendarEvents&date=${encodeURIComponent(dateStr)}&calendarId=${encodeURIComponent(WUYI_CALENDAR_ID)}`;
-          const res = await fetch(url);
-          const text = await res.text();
-          let data = null;
-          try { data = JSON.parse(text); } catch (_) {}
-          if (data && Array.isArray(data.events)) {
-            const titles = data.events.map(ev => ev.title || ev.summary || '').filter(Boolean);
-            calPasteInput.value = titles.join('\n');
-            calFetchStatus.textContent = `✅ 已讀取 ${titles.length} 筆日曆行程！`;
+          const allTitles = [];
+          let supported = false;
+          for (const dStr of dates) {
+            const url = `${webhookUrl}?action=getCalendarEvents&date=${encodeURIComponent(dStr)}&calendarId=${encodeURIComponent(WUYI_CALENDAR_ID)}`;
+            const res = await fetch(url);
+            const text = await res.text();
+            let data = null;
+            try { data = JSON.parse(text); } catch (_) {}
+            if (data && Array.isArray(data.events)) {
+              supported = true;
+              const titles = data.events.map(ev => ev.title || ev.summary || '').filter(Boolean);
+              allTitles.push(...titles);
+            }
+          }
+          if (supported) {
+            calPasteInput.value = allTitles.join('\n');
+            calFetchStatus.textContent = `✅ 已讀取 ${rangeLabel} 共 ${allTitles.length} 筆日曆行程！`;
             runCalendarComparison();
           } else {
             calFetchStatus.textContent = '⚠️ 目前 Code.gs 尚未支援讀取日曆，請點「📋 複製日曆讀取 Code.gs」更新部署，或直接從日曆頁面複製貼上文字！';
@@ -4610,6 +4827,7 @@ if (typeof module !== 'undefined' && module.exports) {
         const orders = getCurrentOrdersForCompare();
         const matchedPairs = [];
         const missingFromOrders = [];
+        const registeredElsewhere = [];
         const matchedOrderIndices = new Set();
 
         for (const ev of events) {
@@ -4626,6 +4844,9 @@ if (typeof module !== 'undefined' && module.exports) {
           if (bestIdx !== -1) {
             matchedOrderIndices.add(bestIdx);
             matchedPairs.push({ ev, ord: orders[bestIdx] });
+          } else if (/(?:✅|✍🏻?|🔫|急單記店)/.test(ev.rawTitle || '') || /(?:✅|✍🏻?|🔫|急單記店)/.test(ev.displayName || '')) {
+            // 名字/標題含有 ✅、✍🏻、🔫、急單記店 代表已登記在其他地方，不標記漏單也不 HIGHLIGHT
+            registeredElsewhere.push(ev);
           } else {
             missingFromOrders.push(ev);
           }
@@ -4638,6 +4859,7 @@ if (typeof module !== 'undefined' && module.exports) {
             <span class="cal-pill">📅 日曆行程：${events.length} 筆</span>
             <span class="cal-pill matched">✅ 已對上：${matchedPairs.length} 筆</span>
             <span class="cal-pill ${missingFromOrders.length > 0 ? 'missing' : 'matched'}">🔴 缺少漏單：${missingFromOrders.length} 筆</span>
+            ${registeredElsewhere.length > 0 ? `<span class="cal-pill">📌 其他登記略過：${registeredElsewhere.length} 筆</span>` : ''}
             ${extraOrders.length > 0 ? `<span class="cal-pill extra">🟡 僅訂單有：${extraOrders.length} 筆</span>` : ''}
           </div>
         `;
@@ -4670,6 +4892,14 @@ if (typeof module !== 'undefined' && module.exports) {
           html += `</div>`;
         }
 
+        if (registeredElsewhere.length > 0) {
+          html += `<div style="font-size: 12.5px; font-weight: 700; color: #475569; margin-top: 10px;">📌 已登記在其他地方（✅ / ✍🏻 / 🔫急單記店，不標記漏單，共 ${registeredElsewhere.length} 筆）：</div><div class="cal-matched-list">`;
+          for (const ev of registeredElsewhere) {
+            html += `<span class="cal-matched-chip" style="background:#f1f5f9;border-color:#cbd5e1;color:#475569;">${ev.rawTitle.replace(/</g, '&lt;')}</span>`;
+          }
+          html += `</div>`;
+        }
+
         if (extraOrders.length > 0) {
           html += `<div style="font-size: 12.5px; font-weight: 700; color: #92400e; margin-top: 10px;">🟡 僅訂單中有、日曆未找到（${extraOrders.length} 筆）：</div><div class="cal-matched-list">`;
           for (const o of extraOrders) {
@@ -4693,24 +4923,35 @@ if (typeof module !== 'undefined' && module.exports) {
           calFetchStatus.textContent = '❌ 請先設定 Apps Script 網址';
           return;
         }
-        const dateStr = calCompareDate.value || '2026-11-22';
-        calFetchStatus.textContent = `⏳ 正在從雲端查詢 ${dateStr} 全部 Drive 檔案、試算表與日曆（無 20 筆上限）...`;
+        const { startStr, endStr, dates } = getCalendarDateRangeList();
+        const rangeLabel = startStr === endStr ? startStr : `${startStr} ～ ${endStr}（共 ${dates.length} 天）`;
+        calFetchStatus.textContent = `⏳ 正在從雲端查詢 ${rangeLabel} 全部 Drive 檔案、試算表與日曆...`;
         try {
-          const url = `${webhookUrl}?action=checkDayOrders&date=${encodeURIComponent(dateStr)}&folderId=${encodeURIComponent(DRIVE_FOLDER_ID)}&calendarId=${encodeURIComponent(WUYI_CALENDAR_ID)}`;
-          const res = await fetch(url);
-          const data = await res.json();
-          if (!data || data.status !== 'success' || !Array.isArray(data.driveFiles)) {
+          const driveNames = [];
+          const sheetItems = [];
+          const calTitles = [];
+          let validCloud = false;
+          for (const dStr of dates) {
+            const url = `${webhookUrl}?action=checkDayOrders&date=${encodeURIComponent(dStr)}&folderId=${encodeURIComponent(DRIVE_FOLDER_ID)}&calendarId=${encodeURIComponent(WUYI_CALENDAR_ID)}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data && data.status === 'success' && Array.isArray(data.driveFiles)) {
+              validCloud = true;
+              driveNames.push(...data.driveFiles.map(f => f.name));
+              sheetItems.push(...(data.sheetOrders || []));
+              calTitles.push(...(data.calendarEvents || []).map(ev => ev.title).filter(Boolean));
+            }
+          }
+          if (!validCloud) {
             calFetchStatus.textContent = '⚠️ 目前 Code.gs 尚未部署 checkDayOrders，請使用新版 Code.gs 重新部署！';
             return;
           }
-          const driveNames = data.driveFiles.map(f => f.name);
-          const sheetItems = data.sheetOrders || [];
-          const calTitles = (data.calendarEvents || []).map(ev => ev.title).filter(Boolean);
           if (calTitles.length > 0) {
             calPasteInput.value = calTitles.join('\n');
           }
           let html = `
             <div class="cal-summary-bar">
+              <span class="cal-pill">📆 查詢期間：${rangeLabel}</span>
               <span class="cal-pill">📁 Google Drive：${driveNames.length} 筆</span>
               <span class="cal-pill matched">📊 Google 試算表：${sheetItems.length} 筆</span>
               <span class="cal-pill">📅 Google 日曆：${calTitles.length} 筆</span>
@@ -4722,7 +4963,7 @@ if (typeof module !== 'undefined' && module.exports) {
           `;
           calCompareResults.innerHTML = html;
           calCompareResults.style.display = 'block';
-          calFetchStatus.textContent = `✅ 雲端查單完成（Drive ${driveNames.length} 筆、試算表 ${sheetItems.length} 筆、日曆 ${calTitles.length} 筆）`;
+          calFetchStatus.textContent = `✅ 雲端查單完成（${rangeLabel}：Drive ${driveNames.length} 筆、試算表 ${sheetItems.length} 筆、日曆 ${calTitles.length} 筆）`;
         } catch (err) {
           calFetchStatus.textContent = `⚠️ 雲端查單失敗（${err.message}），請確認 Code.gs 已更新並部署！`;
         }
